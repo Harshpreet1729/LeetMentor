@@ -1,87 +1,166 @@
 # LeetMentor
 
-LeetMentor is a local LeetCode study workspace.
+![LeetCode mark](https://cdn.simpleicons.org/leetcode/FFA116)
 
-The main idea is simple: when you are solving LeetCode, you should not have to keep copy-pasting the problem into ChatGPT, then copy-pasting your code, then copy-pasting the answer back into your editor. That flow is slow, distracting, and honestly makes it too easy to jump straight to the final code without understanding the idea.
+LeetMentor is a local LeetCode workflow assistant. The point is not to dump a problem into ChatGPT, wait for a giant answer, and copy the final code back. The point is to stay inside one workspace, ask for only the help you need, and understand the pattern through hints, review, complexity, and optimization.
 
-This project keeps everything in one place:
+## Core Workflow
 
-- load the LeetCode problem directly
-- write your code in the same workspace
-- ask for a hint instead of a full answer
-- review your code without leaving the page
-- understand complexity, dry runs, and optimizations
-- only ask for a full solution when you really want it
+```mermaid
+flowchart LR
+    A[Open LeetMentor] --> B[Load LeetCode problem]
+    B --> C[Read problem statement locally]
+    C --> D[Write your own attempt]
+    D --> E{What do you need next?}
+    E -->|Small push| F[Hint]
+    E -->|Problem understanding| G[Explain]
+    E -->|Bug hunting| H[Review my code]
+    E -->|Performance check| I[Complexity]
+    E -->|Make it better| J[Optimize]
+    E -->|Need final reference| K[Full solution]
+    F --> L[Iterate on your own code]
+    G --> L
+    H --> L
+    I --> L
+    J --> L
+    K --> M[Compare and learn]
+    L --> N[Submit on LeetCode]
+    M --> N
+```
 
-So the goal is not just "get accepted". The goal is to actually learn the pattern, debug your own thinking, and stop treating AI like a copy-paste answer machine.
+## Why This Exists
 
-## Why Use This
+```mermaid
+flowchart TB
+    subgraph Old_Flow["Copy-paste AI flow"]
+        A1[Open LeetCode] --> A2[Copy problem]
+        A2 --> A3[Paste into ChatGPT]
+        A3 --> A4[Copy your code]
+        A4 --> A5[Paste again]
+        A5 --> A6[Read long answer]
+        A6 --> A7[Copy AI code back]
+    end
 
-Normal workflow:
+    subgraph New_Flow["LeetMentor flow"]
+        B1[Load problem] --> B2[Code locally]
+        B2 --> B3[Ask for exact help]
+        B3 --> B4[Learn through hints, review, and optimization]
+        B4 --> B5[Submit with understanding]
+    end
+```
 
-1. open LeetCode
-2. copy the problem
-3. paste it into ChatGPT
-4. copy your code
-5. paste your code too
-6. read a huge answer
-7. copy the AI code back again
+Short version:
 
-LeetMentor workflow:
+- less tab switching
+- less copy-paste friction
+- more learning from your own attempt
+- easier use of hints instead of instant full answers
 
-1. load the problem
-2. write your code
-3. ask for exactly what you need:
-   - hint
-   - explanation
-   - review my code
-   - complexity
-   - optimize
-   - dry run
-   - full solution
+## Mentor Decision Tree
 
-That means less friction, less noise, and a better chance that you actually understand what you are doing.
+```mermaid
+flowchart TD
+    A[You are stuck] --> B{What kind of stuck?}
+    B -->|I do not know how to start| C[Hint]
+    B -->|I do not understand the problem| D[Explain]
+    B -->|My code is wrong| E[Review my code]
+    B -->|My code works but feels slow| F[Complexity]
+    B -->|I want a better approach| G[Optimize]
+    B -->|I want to compare with a clean answer| H[Full solution]
+```
 
-## What It Does
+## Request Flow
 
-- Problem lookup by LeetCode number, slug, title, or URL
-- Daily challenge loader
-- Local coding workspace for `C++`, `Python`, `Java`, and `JavaScript`
-- Focused mentor actions:
-  - `Hint`
-  - `Explain the problem`
-  - `Review my code`
-  - `Complexity`
-  - `Dry run`
-  - `Optimize`
-  - `Full solution`
-- Structured AI responses with code blocks and LaTeX for maths/complexity where needed
-- Clean single-page UI instead of bouncing between tools
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UI as Django UI
+    participant LS as LeetCode Service
+    participant AI as Groq API
 
-## You Need An API Key
+    U->>UI: Load problem / write code / choose action
+    UI->>LS: Fetch problem by number, slug, title, or URL
+    LS-->>UI: Problem statement, examples, constraints, tags
+    U->>UI: Ask for hint / review / optimize / solution
+    UI->>AI: Send problem context + code + mode
+    AI-->>UI: Structured answer with code blocks and LaTeX
+    UI-->>U: Render response in one workspace
+```
 
-This app does **not** ship with a free built-in AI backend.
+## Product Shape
 
-You need your own API key to use the AI features.
+```mermaid
+flowchart LR
+    A[Problem loader] --> B[Workspace editor]
+    B --> C[Mentor actions]
+    C --> D[Structured response renderer]
+    D --> E[Hints]
+    D --> F[Code review]
+    D --> G[Complexity in LaTeX]
+    D --> H[Formatted code blocks]
+```
 
-Right now the app is configured to use **Groq**. So you need:
+## What The App Does
+
+```mermaid
+mindmap
+  root((LeetMentor))
+    Problem Input
+      Daily challenge
+      Problem number
+      Title slug
+      Full LeetCode URL
+    Coding
+      C++
+      Python
+      Java
+      JavaScript
+    Mentor Modes
+      Hint
+      Explain
+      Review my code
+      Complexity
+      Dry run
+      Optimize
+      Full solution
+    Output Style
+      LaTeX for maths
+      Code fences
+      Compact sections
+      One-page workflow
+```
+
+## API Requirement
+
+```mermaid
+flowchart TD
+    A[LeetMentor starts] --> B{Do you have a Groq API key?}
+    B -->|Yes| C[Set GROQ_API_KEY in .env]
+    C --> D[AI features work]
+    B -->|No| E[Advanced AI responses cannot run properly]
+```
+
+This project needs your own API key. It does not include a built-in unlimited AI service.
+
+You need:
 
 - a Groq account
-- a Groq API key
-
-Without that key, the advanced AI responses will not work properly.
-
-## Tech Stack
-
-- Backend: Django
-- Frontend: Django templates + vanilla JS + CSS
-- AI provider: Groq API
-- Problem source: LeetCode GraphQL
-- Local DB: SQLite
+- a `GROQ_API_KEY`
+- an `AI_MODEL` value
 
 ## Setup
 
-Create a root `.env` file like this:
+```mermaid
+flowchart LR
+    A[Clone repo] --> B[Create .env]
+    B --> C[Add Django settings]
+    C --> D[Add GROQ_API_KEY]
+    D --> E[Run migrations]
+    E --> F[Start server]
+    F --> G[Open localhost:8000]
+```
+
+Use this `.env`:
 
 ```env
 DJANGO_SECRET_KEY=replace_me
@@ -92,7 +171,7 @@ AI_MODEL=llama-3.3-70b-versatile
 LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
 ```
 
-Then run:
+Run:
 
 ```bash
 python manage.py migrate
@@ -105,46 +184,72 @@ Open:
 http://127.0.0.1:8000
 ```
 
-## How To Use It Well
+## Recommended Usage Pattern
 
-Best way to use this project:
-
-1. load the problem
-2. think first
-3. write your own attempt
-4. ask for a `Hint` if stuck
-5. use `Review my code` when your logic is failing
-6. use `Complexity` and `Optimize` after you have something working
-7. use `Full solution` only when you want to compare against a clean final version
-
-If you only use the full-solution button every time, you will get answers.
-If you use hints, reviews, and optimizations properly, you will actually get better.
-
-## Project Structure
-
-```text
-manage.py
-leetcode_mentor_project/   Django project config
-mentor/                    Django views and AI/problem services
-templates/mentor/          Dashboard templates
-static/mentor/             Dashboard JS and CSS
-
-apps/extension/            Older extension code
-apps/server/               Older Node backend code
-packages/shared/           Shared TS types
+```mermaid
+flowchart TD
+    A[Load a problem] --> B[Think first]
+    B --> C[Write your own attempt]
+    C --> D{Need help?}
+    D -->|Yes, but not full code| E[Use Hint]
+    D -->|My code is failing| F[Use Review my code]
+    D -->|I want better performance| G[Use Complexity or Optimize]
+    D -->|I want a clean reference answer| H[Use Full solution last]
+    E --> C
+    F --> C
+    G --> C
+    H --> I[Compare with your version]
 ```
 
-## Notes
+## Repository Map
 
-- `.env` is required for AI features
-- the Groq model can be changed with `AI_MODEL`
-- hint mode is intentionally short so it nudges you instead of solving everything immediately
-- the old extension/server folders still exist, but the main experience here is the Django app
+```mermaid
+flowchart TB
+    A[manage.py]
+    B[leetcode_mentor_project/]
+    C[mentor/]
+    D[templates/mentor/]
+    E[static/mentor/]
+    F[apps/server/]
+    G[apps/extension/]
+    H[packages/shared/]
+
+    A --> B
+    B --> C
+    C --> D
+    C --> E
+    C -. legacy support .-> F
+    F -. shared types .-> H
+    G -. shared types .-> H
+```
+
+## Practical Theory
+
+LeetMentor is best when you use it like a study partner, not like a code vending machine.
+
+- `Hint` is for momentum.
+- `Review my code` is for debugging your own logic.
+- `Complexity` and `Optimize` are for pushing from accepted to strong.
+- `Full solution` is most useful after you already tried.
+
+If you skip straight to the final solution every time, you will finish problems. If you loop through hints, review, and optimization, you will build actual interview skill.
+
+## Current Stack
+
+- Django backend and UI
+- Groq API for AI responses
+- LeetCode GraphQL for problem data
+- SQLite locally
+- LaTeX rendering through MathJax
 
 ## Good Next Improvements
 
-- Monaco editor support
-- saved session history
-- user login and per-user workspace state
-- stronger code review prompts per language
-- test coverage for assistant formatting and problem parsing
+```mermaid
+flowchart LR
+    A[Current app] --> B[Monaco editor]
+    A --> C[Saved sessions]
+    A --> D[User auth]
+    A --> E[Postgres for deployment]
+    A --> F[Better language-specific review]
+    A --> G[Test coverage]
+```
