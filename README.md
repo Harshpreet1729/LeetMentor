@@ -1,45 +1,87 @@
-# LeetCode Mentor, Django Edition
+# LeetMentor
 
-This project is now pivoted toward a Django-based web app instead of a Chrome extension. The goal stays the same: help you learn LeetCode with directional hints, clean code review, complexity analysis, dry runs, and full solutions when you explicitly ask for them.
+LeetMentor is a local LeetCode study workspace.
 
-## What You Get
+The main idea is simple: when you are solving LeetCode, you should not have to keep copy-pasting the problem into ChatGPT, then copy-pasting your code, then copy-pasting the answer back into your editor. That flow is slow, distracting, and honestly makes it too easy to jump straight to the final code without understanding the idea.
 
-- Dark, single-dashboard UI instead of a browser extension
-- Problem lookup by number, slug, title, or LeetCode URL
+This project keeps everything in one place:
+
+- load the LeetCode problem directly
+- write your code in the same workspace
+- ask for a hint instead of a full answer
+- review your code without leaving the page
+- understand complexity, dry runs, and optimizations
+- only ask for a full solution when you really want it
+
+So the goal is not just "get accepted". The goal is to actually learn the pattern, debug your own thinking, and stop treating AI like a copy-paste answer machine.
+
+## Why Use This
+
+Normal workflow:
+
+1. open LeetCode
+2. copy the problem
+3. paste it into ChatGPT
+4. copy your code
+5. paste your code too
+6. read a huge answer
+7. copy the AI code back again
+
+LeetMentor workflow:
+
+1. load the problem
+2. write your code
+3. ask for exactly what you need:
+   - hint
+   - explanation
+   - review my code
+   - complexity
+   - optimize
+   - dry run
+   - full solution
+
+That means less friction, less noise, and a better chance that you actually understand what you are doing.
+
+## What It Does
+
+- Problem lookup by LeetCode number, slug, title, or URL
 - Daily challenge loader
-- Code workspace for C++, Python, Java, and JavaScript
-- Mentor actions for explain, hint, review, complexity, dry run, optimize, and full solution
-- Gemini-powered responses with short, directional hint mode
+- Local coding workspace for `C++`, `Python`, `Java`, and `JavaScript`
+- Focused mentor actions:
+  - `Hint`
+  - `Explain the problem`
+  - `Review my code`
+  - `Complexity`
+  - `Dry run`
+  - `Optimize`
+  - `Full solution`
+- Structured AI responses with code blocks and LaTeX for maths/complexity where needed
+- Clean single-page UI instead of bouncing between tools
 
-## Main Stack
+## You Need An API Key
 
-- Backend and UI: Django
-- AI: Gemini API
-- Problem source: LeetCode GraphQL + problem index fallback
-- Database: SQLite
+This app does **not** ship with a free built-in AI backend.
 
-## Project Layout
+You need your own API key to use the AI features.
 
-```text
-manage.py
-leetcode_mentor_project/   Django project config
-mentor/                    Django app with views and services
-templates/mentor/          Dashboard template
-static/mentor/             Dark UI CSS and client-side JS
+Right now the app is configured to use **Groq**. So you need:
 
-apps/extension/            Legacy Chrome extension code
-apps/server/               Legacy Node backend code
-packages/shared/           Legacy shared TS types
-```
+- a Groq account
+- a Groq API key
+
+Without that key, the advanced AI responses will not work properly.
+
+## Tech Stack
+
+- Backend: Django
+- Frontend: Django templates + vanilla JS + CSS
+- AI provider: Groq API
+- Problem source: LeetCode GraphQL
+- Local DB: SQLite
 
 ## Setup
 
-1. Create a root `.env` file from the example values below.
-2. Add your Gemini key.
-3. Run migrations.
-4. Start Django.
-
-Example `.env`:
+Create a root `.env` file like this:
 
 ```env
 DJANGO_SECRET_KEY=replace_me
@@ -50,32 +92,59 @@ AI_MODEL=llama-3.3-70b-versatile
 LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
 ```
 
-## Run It
+Then run:
 
 ```bash
 python manage.py migrate
 python manage.py runserver
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+Open:
 
-## How To Use
+```text
+http://127.0.0.1:8000
+```
 
-1. Load a problem using its number, slug, title, or LeetCode URL.
-2. Paste your code into the code studio.
-3. Pick your language.
-4. Click `Explain Problem`, `Give Hint`, `Review My Code`, `Analyze Complexity`, `Dry Run`, `Optimize`, or `Show Full Solution`.
-5. Add an optional question if you want the mentor to focus on something specific.
+## How To Use It Well
+
+Best way to use this project:
+
+1. load the problem
+2. think first
+3. write your own attempt
+4. ask for a `Hint` if stuck
+5. use `Review my code` when your logic is failing
+6. use `Complexity` and `Optimize` after you have something working
+7. use `Full solution` only when you want to compare against a clean final version
+
+If you only use the full-solution button every time, you will get answers.
+If you use hints, reviews, and optimizations properly, you will actually get better.
+
+## Project Structure
+
+```text
+manage.py
+leetcode_mentor_project/   Django project config
+mentor/                    Django views and AI/problem services
+templates/mentor/          Dashboard templates
+static/mentor/             Dashboard JS and CSS
+
+apps/extension/            Older extension code
+apps/server/               Older Node backend code
+packages/shared/           Shared TS types
+```
 
 ## Notes
 
-- The old extension code is still present, but it is no longer the primary product path.
-- Django will also read env values from `apps/server/.env` if you already placed your Gemini key there.
-- Hint mode is intentionally short so it does not waste tokens.
+- `.env` is required for AI features
+- the Groq model can be changed with `AI_MODEL`
+- hint mode is intentionally short so it nudges you instead of solving everything immediately
+- the old extension/server folders still exist, but the main experience here is the Django app
 
-## Next Good Improvements
+## Good Next Improvements
 
-- Add Monaco Editor for a stronger VS Code-like editing feel
-- Save past sessions to the database
-- Add authentication so each user keeps their own history
-- Add pattern-based hinting before calling Gemini
+- Monaco editor support
+- saved session history
+- user login and per-user workspace state
+- stronger code review prompts per language
+- test coverage for assistant formatting and problem parsing
