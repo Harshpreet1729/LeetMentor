@@ -1,6 +1,6 @@
 # LeetMentor
 
-![LeetCode mark](https://cdn.simpleicons.org/leetcode/FFA116)
+
 
 LeetMentor is a local LeetCode workflow assistant. The point is not to dump a problem into ChatGPT, wait for a giant answer, and copy the final code back. The point is to stay inside one workspace, ask for only the help you need, and understand the pattern through hints, review, complexity, and optimization.
 
