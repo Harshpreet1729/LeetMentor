@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.turbo
+.DS_Store
+*.log
+.env
+db.sqlite3
+django.out
+django.err
+__pycache__/
+*.pyc
+apps/server/.cache
+apps/server/data
+apps/extension/.output

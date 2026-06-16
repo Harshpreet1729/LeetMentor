@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}LeetMentor Workspace{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}" />
+{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <div class="hero__copy">
+      <p class="eyebrow">LeetCode workspace</p>
+      <h1>Solve one problem at a time.</h1>
+      <p class="hero__body">
+        Load a problem, write your solution, and get focused help for debugging, complexity, optimization, and full solutions.
+      </p>
+    </div>
+    <div class="hero__meta">
+      <span>Problem lookup</span>
+      <span>Focused editor</span>
+      <span>Structured mentor output</span>
+    </div>
+  </section>
+
+  <section class="workspace-grid">
+    <aside class="workspace-sidebar">
+      <article class="panel panel--compact" id="problem-loader">
+        <div class="panel__header">
+          <div>
+            <p class="panel__eyebrow">Problem source</p>
+            <h2>Load problem</h2>
+          </div>
+          <button id="dailyBtn" class="button button--ghost" type="button">Today</button>
+        </div>
+
+        <label class="field-label" for="problemIdentifier">Problem number, slug, title, or LeetCode URL</label>
+        <div class="field-row">
+          <input
+            id="problemIdentifier"
+            class="input"
+            placeholder="e.g. 1, two-sum, or a LeetCode URL"
+            autocomplete="off"
+          />
+          <button id="loadProblemBtn" class="button button--primary" type="button">Load</button>
+        </div>
+        <p id="problemStatus" class="status-text" role="status">Ready.</p>
+      </article>
+
+      <article class="panel" id="problem-context">
+        <div class="panel__header">
+          <div>
+            <p class="panel__eyebrow">Current problem</p>
+            <h2 id="problemTitle">No problem loaded yet</h2>
+          </div>
+          <span id="difficultyBadge" class="badge hidden"></span>
+        </div>
+
+        <a id="problemLink" class="text-link hidden" target="_blank" rel="noreferrer">Open on LeetCode</a>
+        <p id="problemStatement" class="problem-summary">
+          Load a problem to see its goal, examples, and constraints here.
+        </p>
+
+        <div id="tagList" class="tag-row"></div>
+
+        <details class="detail-toggle">
+          <summary>Examples and constraints</summary>
+          <div class="detail-columns">
+            <section>
+              <h3>Examples</h3>
+              <pre id="problemExamples" class="detail-box">No examples yet.</pre>
+            </section>
+            <section>
+              <h3>Constraints</h3>
+              <pre id="problemConstraints" class="detail-box">No constraints yet.</pre>
+            </section>
+          </div>
+        </details>
+      </article>
+    </aside>
+
+    <div class="workspace-main" id="workspace">
+      <article class="panel">
+        <div class="panel__header panel__header--stack-mobile">
+          <div>
+            <p class="panel__eyebrow">Workspace</p>
+            <h2>Code</h2>
+          </div>
+          <div class="toolbar">
+            <select id="languageSelect" class="input input--select">
+              <option>C++</option>
+              <option>Python</option>
+              <option>Java</option>
+              <option>JavaScript</option>
+            </select>
+            <select id="hintLevelSelect" class="input input--select">
+              <option value="1">Directional hint</option>
+              <option value="2">Hint for the approach</option>
+              <option value="3">Hint from resolution</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="editor-frame">
+          <div class="editor-frame__bar">
+            <div class="editor-dots" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <span id="editorFilename">solution.cpp</span>
+          </div>
+          <textarea id="codeInput" class="code-editor" spellcheck="false" placeholder="// Write or paste your solution here"></textarea>
+        </div>
+
+        <label class="field-label" for="questionInput">Optional note to the mentor</label>
+        <textarea
+          id="questionInput"
+          class="input input--textarea"
+          placeholder="Ask for a hint, dry run, complexity check, bug explanation, or review focus."
+        ></textarea>
+      </article>
+
+      <article class="panel panel--split" id="mentor-output">
+        <div class="mentor-actions">
+          <div class="panel__header">
+            <div>
+              <p class="panel__eyebrow">Mentor actions</p>
+              <h2>Choose an action</h2>
+            </div>
+          </div>
+
+          <div class="action-grid">
+            <button class="button button--mode active" data-mode="hint" type="button">Hint</button>
+            <button class="button button--mode" data-mode="explain" type="button">Explain the problem</button>
+            <button class="button button--mode" data-mode="debug" type="button">Review my code</button>
+          </div>
+          <p class="action-note">Use the advanced actions when you want a stricter complexity, optimization, or full-solution response.</p>
+
+          <details class="detail-toggle detail-toggle--compact">
+            <summary>Advanced actions</summary>
+            <div class="action-grid action-grid--advanced">
+              <button class="button button--mode button--subtle" data-mode="complexity" type="button">Complexity</button>
+              <button class="button button--mode button--subtle" data-mode="dry_run" type="button">Dry run</button>
+              <button class="button button--mode button--subtle" data-mode="optimize" type="button">Optimize</button>
+              <button class="button button--mode button--subtle" data-mode="full_solution" type="button">Full solution</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="mentor-response">
+          <div class="panel__header">
+            <div>
+              <p class="panel__eyebrow">Mentor output</p>
+              <h2>Response</h2>
+            </div>
+            <button id="clearOutputBtn" class="button button--ghost" type="button">Clear</button>
+          </div>
+
+          <p id="assistantStatus" class="status-text" role="status">Load a problem, then choose one action.</p>
+          <article id="assistantOutput" class="response-box response-box--formatted">
+            <p>Your explanation, hint, code review, or dry run will appear here.</p>
+          </article>
+          <p id="nextStep" class="next-step hidden"></p>
+        </div>
+      </article>
+    </div>
+  </section>
+{% endblock %}
+
+{% block extra_js %}
+  <script src="{% static 'mentor/app.js' %}"></script>
+{% endblock %}

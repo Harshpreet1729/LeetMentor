@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "LeetCode Student-Friendly AI Assistant",
+  "description": "A student-friendly LeetCode mentor with hints, debugging help, and guided explanations.",
+  "version": "1.0.0",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["https://leetcode.com/*", "http://localhost:4000/*"],
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LeetCode AI Assistant",
+    "default_popup": "index.html"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/*"],
+      "js": ["assets/contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/contentScript.css"],
+      "matches": ["https://leetcode.com/*"]
+    }
+  ]
+}

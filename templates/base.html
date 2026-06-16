@@ -1,0 +1,70 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}LeetMentor{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token }}" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+    <script>
+      window.MathJax = {
+        tex: {
+          inlineMath: [["\\(", "\\)"], ["$", "$"]],
+          displayMath: [["\\[", "\\]"], ["$$", "$$"]]
+        },
+        svg: { fontCache: "global" }
+      };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="site-header">
+        <div class="site-header__inner">
+          <a href="/" class="brand" aria-label="LeetMentor home">
+            <span class="brand__mark">&lt;/&gt;</span>
+            <span class="brand__text">
+              <strong>LeetMentor</strong>
+              <small>AI coding assistant</small>
+            </span>
+          </a>
+
+          <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle>
+            <span class="nav-toggle__line"></span>
+            <span class="nav-toggle__line"></span>
+          </button>
+
+          <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
+            <a href="#problem-loader">Problem</a>
+            <a href="#workspace">Workspace</a>
+            <a href="#mentor-output">Mentor</a>
+          </nav>
+        </div>
+      </header>
+
+      <main class="page-shell">
+        {% if messages %}
+          <section class="messages" aria-label="Messages">
+            {% for message in messages %}
+              <div class="message message--{{ message.tags|default:'info' }}">{{ message }}</div>
+            {% endfor %}
+          </section>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="site-footer">
+        <p>LeetMentor keeps problem loading, code practice, and mentor guidance in one focused place.</p>
+      </footer>
+    </div>
+
+    <script src="{% static 'js/app.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+  </body>
+</html>

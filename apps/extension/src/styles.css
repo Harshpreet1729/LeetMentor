@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply font-display bg-[#0a0f14] text-slate-100;
+}
+
+.assistant-gradient {
+  background:
+    radial-gradient(circle at top left, rgba(16, 185, 129, 0.2), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.12), transparent 28%),
+    linear-gradient(180deg, #081018 0%, #0d1621 40%, #111c27 100%);
+}
+
+.assistant-dark {
+  background:
+    radial-gradient(circle at top left, rgba(102, 187, 106, 0.18), transparent 32%),
+    linear-gradient(160deg, #101914 0%, #18251d 48%, #122017 100%);
+}
+
+.assistant-shell {
+  @apply text-slate-100;
+}
+
+#leetcode-ai-assistant-shadow-root {
+  all: initial;
+  font-family: "Segoe UI", sans-serif;
+}
+
+.assistant-card {
+  @apply rounded-[28px] border border-emerald-400/20 bg-slate-900/75 shadow-[0_20px_50px_rgba(0,0,0,0.28)] backdrop-blur-xl;
+}
+
+.assistant-card-soft {
+  @apply rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md;
+}
+
+.assistant-section-label {
+  @apply text-[11px] font-semibold uppercase tracking-[0.28em] text-emerald-300/80;
+}
+
+.assistant-heading {
+  @apply text-slate-50;
+}
+
+.assistant-muted {
+  @apply text-slate-400;
+}
+
+.assistant-field {
+  @apply rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/15;
+}
+
+.assistant-code-field {
+  @apply rounded-3xl border border-emerald-400/15 bg-[#081018] px-4 py-3 font-mono text-[12px] leading-6 text-emerald-100 outline-none transition placeholder:text-slate-500 focus:border-emerald-400/50 focus:ring-2 focus:ring-emerald-400/15;
+}
+
+.assistant-primary-btn {
+  @apply rounded-2xl bg-emerald-500 px-4 py-2.5 font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60;
+}
+
+.assistant-secondary-btn {
+  @apply rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 font-semibold text-slate-200 transition hover:border-emerald-400/30 hover:bg-white/[0.08];
+}
+
+.assistant-ghost-btn {
+  @apply rounded-2xl border border-emerald-400/20 bg-emerald-400/5 px-4 py-2.5 font-semibold text-emerald-200 transition hover:bg-emerald-400/10;
+}
+
+.assistant-scrollbar {
+  scrollbar-color: rgba(16, 185, 129, 0.45) rgba(255, 255, 255, 0.06);
+}
+
+.assistant-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.assistant-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.assistant-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.38);
+  border-radius: 9999px;
+}
