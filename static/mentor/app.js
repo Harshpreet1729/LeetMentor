@@ -2,7 +2,16 @@
   const state = {
     problem: null,
     activeMode: "hint",
-    loading: false
+    loading: false,
+    autosaveTimer: null
+  };
+  const storageKeys = {
+    code: "leetmentor.code",
+    note: "leetmentor.note",
+    language: "leetmentor.language",
+    hintLevel: "leetmentor.hintLevel",
+    problemIdentifier: "leetmentor.problemIdentifier",
+    problemSnapshot: "leetmentor.problemSnapshot"
   };
 
   const byId = (id) => document.getElementById(id);
@@ -12,17 +21,24 @@
     dailyBtn: byId("dailyBtn"),
     loadProblemBtn: byId("loadProblemBtn"),
     difficultyBadge: byId("difficultyBadge"),
+    workspaceProblemMeta: byId("workspaceProblemMeta"),
+    serverStateChip: byId("serverStateChip"),
     problemTitle: byId("problemTitle"),
     problemLink: byId("problemLink"),
+    problemStatementPreview: byId("problemStatementPreview"),
     problemStatement: byId("problemStatement"),
     problemExamples: byId("problemExamples"),
     problemConstraints: byId("problemConstraints"),
+    contextTabs: Array.from(document.querySelectorAll("[data-context-tab]")),
+    contextPanels: Array.from(document.querySelectorAll("[data-context-panel]")),
     tagList: byId("tagList"),
     codeInput: byId("codeInput"),
     editorFilename: byId("editorFilename"),
+    editorAutosave: byId("editorAutosave"),
     languageSelect: byId("languageSelect"),
     hintLevelSelect: byId("hintLevelSelect"),
     questionInput: byId("questionInput"),
+    noteAutosave: byId("noteAutosave"),
     assistantStatus: byId("assistantStatus"),
     assistantOutput: byId("assistantOutput"),
     nextStep: byId("nextStep"),
@@ -32,7 +48,38 @@
   };
 
   function setText(element, text) {
+    if (!element) {
+      return;
+    }
     element.textContent = text;
+  }
+
+  function setStatusTone(element, tone) {
+    if (!element) {
+      return;
+    }
+    element.classList.remove("status-banner--neutral", "status-banner--loading", "status-banner--success", "status-banner--error");
+    element.classList.add(`status-banner--${tone}`);
+  }
+
+  function updateServerChip(text, tone) {
+    if (!els.serverStateChip) {
+      return;
+    }
+    setText(els.serverStateChip, text);
+    els.serverStateChip.classList.remove("topbar-chip--success", "topbar-chip--warning", "topbar-chip--error");
+    if (tone) {
+      els.serverStateChip.classList.add(`topbar-chip--${tone}`);
+    }
+  }
+
+  function setContextTab(tabName) {
+    els.contextTabs.forEach((button) => {
+      button.classList.toggle("active", button.getAttribute("data-context-tab") === tabName);
+    });
+    els.contextPanels.forEach((panel) => {
+      panel.classList.toggle("hidden", panel.getAttribute("data-context-panel") !== tabName);
+    });
   }
 
   function escapeHtml(text) {
@@ -59,6 +106,17 @@
       return `<li>${renderInlineMarkdown(content)}</li>`;
     });
     return `<${tag}>${items.join("")}</${tag}>`;
+  }
+
+  function normalizeAssistantText(text) {
+    return String(text || "")
+      .replace(/\r/g, "")
+      .replace(/(### [^\n`]+?)\s+```/g, "$1\n\n```")
+      .replace(/(### [^\n]+?)\s+(?=\d+\.\s)/g, "$1\n\n")
+      .replace(/(### [^\n]+?)\s+(?=[A-Z][a-z])/g, "$1\n\n")
+      .replace(/```(\w+)?\s+/g, (_, language) => `\n\`\`\`${language || ""}\n`)
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   function renderTextBlock(text) {
@@ -101,7 +159,7 @@
   }
 
   function renderAssistantOutput(text) {
-    const source = String(text || "").trim();
+    const source = normalizeAssistantText(text);
     if (!source) {
       els.assistantOutput.innerHTML = "<p>No answer yet.</p>";
       return;
@@ -209,6 +267,84 @@
       .join("")}</ul>`;
   }
 
+  function problemPreviewText(problem) {
+    const statement = String(problem?.statement || "").replace(/\s+/g, " ").trim();
+    if (!statement) {
+      return "Load a problem to see a concise summary here.";
+    }
+    return statement.length > 180 ? `${statement.slice(0, 180).trimEnd()}...` : statement;
+  }
+
+  function saveWorkspaceSnapshot() {
+    localStorage.setItem(storageKeys.code, els.codeInput.value);
+    localStorage.setItem(storageKeys.note, els.questionInput ? els.questionInput.value : "");
+    localStorage.setItem(storageKeys.language, els.languageSelect.value);
+    localStorage.setItem(storageKeys.hintLevel, els.hintLevelSelect.value);
+    localStorage.setItem(storageKeys.problemIdentifier, els.problemIdentifier.value);
+    if (state.problem) {
+      localStorage.setItem(storageKeys.problemSnapshot, JSON.stringify(state.problem));
+    }
+  }
+
+  function queueAutosave(source) {
+    window.clearTimeout(state.autosaveTimer);
+    if (source === "code" && els.editorAutosave) {
+      setText(els.editorAutosave, "Saving locally...");
+    }
+    if (source === "note" && els.noteAutosave) {
+      setText(els.noteAutosave, "Saving note...");
+    }
+    state.autosaveTimer = window.setTimeout(() => {
+      saveWorkspaceSnapshot();
+      if (els.editorAutosave) {
+        setText(els.editorAutosave, "Autosaved locally");
+      }
+      if (els.noteAutosave) {
+        setText(els.noteAutosave, "Notes are saved locally in this browser.");
+      }
+    }, 180);
+  }
+
+  function restoreWorkspaceSnapshot() {
+    const savedCode = localStorage.getItem(storageKeys.code);
+    const savedNote = localStorage.getItem(storageKeys.note);
+    const savedLanguage = localStorage.getItem(storageKeys.language);
+    const savedHintLevel = localStorage.getItem(storageKeys.hintLevel);
+    const savedProblemIdentifier = localStorage.getItem(storageKeys.problemIdentifier);
+    const savedProblem = localStorage.getItem(storageKeys.problemSnapshot);
+
+    if (savedLanguage) {
+      els.languageSelect.value = savedLanguage;
+    }
+    if (savedHintLevel) {
+      els.hintLevelSelect.value = savedHintLevel;
+    }
+    if (savedProblemIdentifier) {
+      els.problemIdentifier.value = savedProblemIdentifier;
+    }
+    if (savedCode) {
+      els.codeInput.value = savedCode;
+      if (els.editorAutosave) {
+        setText(els.editorAutosave, "Restored local draft");
+      }
+    }
+    if (savedNote && els.questionInput) {
+      els.questionInput.value = savedNote;
+    }
+    if (savedProblem) {
+      try {
+        const parsed = JSON.parse(savedProblem);
+        if (parsed && typeof parsed === "object") {
+          setProblem(parsed);
+          setStatusTone(els.problemStatus, "neutral");
+          setText(els.problemStatus, "Restored your last loaded problem.");
+        }
+      } catch (error) {
+        localStorage.removeItem(storageKeys.problemSnapshot);
+      }
+    }
+  }
+
   function buildChatGptPrompt() {
     if (!state.problem) {
       return "";
@@ -238,7 +374,7 @@
       pieces.push("", `My current ${els.languageSelect.value} code:`, "```", els.codeInput.value.trim(), "```");
     }
 
-    if (els.questionInput.value.trim()) {
+    if (els.questionInput && els.questionInput.value.trim()) {
       pieces.push("", `What I want help with: ${els.questionInput.value.trim()}`);
     }
 
@@ -247,6 +383,7 @@
 
   async function openChatGptWithProblem() {
     if (!state.problem) {
+      setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, "Load a problem first so there is something to send.");
       return;
     }
@@ -255,10 +392,12 @@
 
     try {
       await navigator.clipboard.writeText(prompt);
+      setStatusTone(els.assistantStatus, "success");
       setText(els.assistantStatus, "Problem copied. ChatGPT opened in a new tab.");
       setText(els.nextStep, "Next step: paste with Ctrl+V in ChatGPT, then press Enter.");
       els.nextStep.classList.remove("hidden");
     } catch (error) {
+      setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, "ChatGPT opened, but clipboard copy was blocked by the browser.");
       setText(els.nextStep, "Next step: copy the problem manually and paste it into ChatGPT.");
       els.nextStep.classList.remove("hidden");
@@ -283,10 +422,24 @@
 
   function setProblem(problem) {
     state.problem = problem;
+    const tags = (problem.tags || []).join(", ");
     setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
-    setText(els.problemStatement, problem.statement || "No statement available.");
+    setText(els.problemStatementPreview, problemPreviewText(problem));
+    setText(
+      els.problemStatement,
+      problem.title
+        ? `Difficulty: ${problem.difficulty || "Unknown"}${tags ? ` • Topics: ${tags}` : ""}`
+        : "Full statement stays on LeetCode. Load a problem here to see its title, difficulty, and topic tags."
+    );
+    setText(
+      els.workspaceProblemMeta,
+      problem.title
+        ? `${problem.questionFrontendId}. ${problem.title} · ${problem.difficulty || "Unknown"}${(problem.tags || []).length ? ` · ${(problem.tags || []).slice(0, 3).join(" · ")}` : ""}`
+        : "Load a problem to begin a guided practice session."
+    );
     renderProblemExamples(problem.exampleCards, problem.examples);
     renderProblemConstraints(problem.constraints);
+    setContextTab("statement");
 
     if (problem.link) {
       els.problemLink.href = problem.link;
@@ -312,6 +465,7 @@
       chip.textContent = tag;
       els.tagList.appendChild(chip);
     });
+    saveWorkspaceSnapshot();
   }
 
   function setActiveMode(mode) {
@@ -356,6 +510,7 @@
     if (els.askChatgptBtn) {
       els.askChatgptBtn.disabled = isBusy;
     }
+    updateServerChip(isBusy ? "Working..." : "Server ready", isBusy ? "warning" : "success");
   }
 
   async function fetchJson(url, options, timeoutMs = 25000) {
@@ -390,13 +545,16 @@
     }
 
     setBusy(true, "Loading...");
+    setStatusTone(els.problemStatus, "loading");
     setText(els.problemStatus, "Loading today's daily challenge...");
 
     try {
       const data = await fetchJson("/api/daily/");
       setProblem(data.problem);
+      setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Daily challenge loaded.");
     } catch (error) {
+      setStatusTone(els.problemStatus, "error");
       setText(els.problemStatus, error.name === "AbortError" ? "Daily problem request timed out." : error.message);
     } finally {
       setBusy(false, "Working...");
@@ -410,18 +568,22 @@
 
     const identifier = els.problemIdentifier.value.trim();
     if (!identifier) {
+      setStatusTone(els.problemStatus, "error");
       setText(els.problemStatus, "Enter a problem number, slug, title, or URL first.");
       return;
     }
 
     setBusy(true, "Loading...");
+    setStatusTone(els.problemStatus, "loading");
     setText(els.problemStatus, "Looking up problem...");
 
     try {
       const data = await fetchJson(`/api/problem/?identifier=${encodeURIComponent(identifier)}`);
       setProblem(data.problem);
+      setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Problem loaded.");
     } catch (error) {
+      setStatusTone(els.problemStatus, "error");
       setText(els.problemStatus, error.name === "AbortError" ? "Problem lookup timed out." : error.message);
     } finally {
       setBusy(false, "Working...");
@@ -434,6 +596,7 @@
     }
 
     if (!state.problem) {
+      setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, "Load a problem first so the mentor has context.");
       return;
     }
@@ -443,11 +606,12 @@
       problem: state.problem,
       userCode: els.codeInput.value.trim(),
       language: els.languageSelect.value,
-      userQuestion: els.questionInput.value.trim(),
+      userQuestion: els.questionInput ? els.questionInput.value.trim() : "",
       hintLevel: Number(els.hintLevelSelect.value)
     };
 
     if (mode === "debug" && !payload.userCode) {
+      setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, "Add your code first so the mentor can review the actual solution.");
       renderAssistantOutput([
         "### Missing code",
@@ -462,8 +626,9 @@
     }
 
     setBusy(true, "Thinking...");
+    setStatusTone(els.assistantStatus, "loading");
     setText(els.assistantStatus, "Thinking...");
-    els.assistantOutput.innerHTML = "";
+    els.assistantOutput.innerHTML = '<div class="response-skeleton"><span></span><span></span><span></span></div>';
     els.nextStep.classList.add("hidden");
 
     try {
@@ -481,12 +646,14 @@
       );
 
       renderAssistantOutput(data.answer);
+      setStatusTone(els.assistantStatus, "success");
       setText(els.assistantStatus, "Ready.");
       if (data.suggestedNextStep) {
         setText(els.nextStep, `Next step: ${data.suggestedNextStep}`);
         els.nextStep.classList.remove("hidden");
       }
     } catch (error) {
+      setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, error.name === "AbortError" ? "The mentor took too long. Try again." : error.message);
       renderAssistantOutput([
         "### Request failed",
@@ -507,12 +674,19 @@
     });
   });
 
+  els.contextTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      setContextTab(button.getAttribute("data-context-tab"));
+    });
+  });
+
   els.dailyBtn.addEventListener("click", loadDaily);
   els.loadProblemBtn.addEventListener("click", loadProblem);
   if (els.askChatgptBtn) {
     els.askChatgptBtn.addEventListener("click", openChatGptWithProblem);
   }
   els.clearOutputBtn.addEventListener("click", () => {
+    setStatusTone(els.assistantStatus, "neutral");
     setText(els.assistantStatus, "Output cleared.");
     renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
     setText(els.nextStep, "");
@@ -525,9 +699,23 @@
     }
   });
 
-  els.languageSelect.addEventListener("change", updateEditorFilename);
+  els.languageSelect.addEventListener("change", () => {
+    updateEditorFilename();
+    saveWorkspaceSnapshot();
+  });
+  els.hintLevelSelect.addEventListener("change", saveWorkspaceSnapshot);
+  els.problemIdentifier.addEventListener("input", saveWorkspaceSnapshot);
+  els.codeInput.addEventListener("input", () => queueAutosave("code"));
+  if (els.questionInput) {
+    els.questionInput.addEventListener("input", () => queueAutosave("note"));
+  }
 
   setActiveMode("hint");
+  setContextTab("statement");
+  restoreWorkspaceSnapshot();
   updateEditorFilename();
+  updateServerChip("Server ready", "success");
+  setStatusTone(els.problemStatus, "neutral");
+  setStatusTone(els.assistantStatus, "neutral");
   renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
 })();

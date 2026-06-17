@@ -139,6 +139,12 @@
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
 
+.input,
+.input option,
+.input optgroup {
+  color-scheme: dark;
+}
+
 .input::placeholder,
 .code-editor::placeholder {
   color: rgba(255, 255, 255, 0.34);
@@ -154,6 +160,14 @@
 
 .input--select {
   min-width: 170px;
+  background: #171a20;
+  color: #f5f7fb;
+}
+
+.input--select option,
+.input--select optgroup {
+  background: #171a20;
+  color: #f5f7fb;
 }
 
 .input--textarea {
@@ -231,6 +245,25 @@
   font-size: 0.92rem;
 }
 
+.status-banner--loading,
+.status-banner--success,
+.status-banner--error,
+.status-banner--neutral {
+  transition: color 140ms ease;
+}
+
+.status-banner--loading {
+  color: #ffc285;
+}
+
+.status-banner--success {
+  color: #f1f5f9;
+}
+
+.status-banner--error {
+  color: #ffb2b2;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -262,17 +295,17 @@
   color: #ffffff;
 }
 
-.problem-summary {
-  margin: 0 0 0.95rem;
-  color: var(--muted);
-  line-height: 1.7;
-}
-
 .tag-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
+#problem-context {
+  min-height: 220px;
+  resize: vertical;
+  overflow: auto;
 }
 
 .detail-toggle {
@@ -319,6 +352,9 @@
 
 .response-box {
   min-height: 290px;
+  resize: vertical;
+  overflow: auto;
+  font-size: 0.98rem;
 }
 
 .detail-empty {
@@ -389,6 +425,19 @@
 .response-box--formatted ol,
 .response-box--formatted blockquote {
   margin: 0 0 0.95rem;
+}
+
+.response-box--formatted p,
+.response-box--formatted li {
+  color: #d6dbe4;
+  font-weight: 400;
+  line-height: 1.78;
+}
+
+.response-box--formatted h2,
+.response-box--formatted h3,
+.response-box--formatted h4 {
+  font-weight: 600;
 }
 
 .response-box--formatted strong {
@@ -508,16 +557,30 @@
   gap: 0.85rem;
 }
 
+#mentor-output {
+  min-height: 340px;
+  resize: vertical;
+  overflow: auto;
+}
+
 .action-grid {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  align-items: stretch;
 }
 
 .action-grid .button {
-  flex: 1 1 160px;
+  width: 100%;
+  min-height: 52px;
+  flex: none;
+  line-height: 1.25;
+  white-space: normal;
+  border-radius: 18px;
 }
 
 .action-grid--advanced .button {
-  flex-basis: calc(50% - 0.28rem);
+  min-height: 46px;
 }
 
 @media (max-width: 1080px) {
@@ -535,20 +598,18 @@
   .hero__meta,
   .field-row,
   .toolbar,
-  .action-grid,
   .detail-columns,
   .panel__header--stack-mobile {
     flex-direction: column;
     grid-template-columns: 1fr;
   }
 
-  .input--select {
-    min-width: 0;
+  .action-grid {
+    grid-template-columns: 1fr;
   }
 
-  .action-grid .button,
-  .action-grid--advanced .button {
-    flex-basis: 100%;
+  .input--select {
+    min-width: 0;
   }
 
   .panel,

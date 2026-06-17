@@ -97,9 +97,12 @@ Be precise and concrete. Do not give generic advice when the code or problem con
 Response rules:
 - Start with the direct answer, not with filler.
 - Use short markdown headings like `### Issue`, `### Fix`, `### Complexity`, `### Code`.
+- Put each heading on its own line, then leave one blank line before the content.
+- Never put prose, numbered steps, or a code fence on the same line as a heading.
 - If you mention complexity, formulas, recurrence relations, or numeric expressions, write them in LaTeX using `\\( ... \\)` or `\\[ ... \\]`.
 - Never leave formulas in plain text if LaTeX would make them clearer.
 - Any code must be inside fenced code blocks with the language tag.
+- Use bullets or numbered lists instead of one long paragraph whenever you explain steps.
 - When referring to a specific expression, variable, or code line, wrap it in backticks.
 - Prefer compact answers over long essays.
 - Do not shame the student.
@@ -114,9 +117,9 @@ Response rules:
 
 MODE_GUIDANCE = {
     "hint": "Give a progressive hint only. Respect hint level exactly. Level 1 is a starting hint, level 2 is a directional hint, and level 3 is an algorithm hint with numbered English steps. Do not use full code.",
-    "explain": "Explain the problem briefly. Include the goal, one small example, and the core idea. Use LaTeX if a formula appears.",
+    "explain": "Explain only what the problem is asking. Clarify the input, required output, special operations or rules, and one small example. Do not give the algorithm, do not give the direct solution, and do not include code.",
     "debug": "Review the student's actual code. Identify the exact bug, explain why it fails on one concrete case, and show the corrected version in a fenced code block only if needed.",
-    "complexity": "State the current time and space complexity precisely using LaTeX. If student code is present, analyze that code. If not, clearly say you are assuming the common accepted approach for this problem. Then say whether a better approach exists.",
+    "complexity": "Answer only with the time and space complexity plus a very short reason. Do not explain the full approach, do not give the solution, and do not include code.",
     "dry_run": "Dry run one real sample from the problem. Use the actual values from the example, show the changing state clearly, and explain what each step is doing.",
     "full_solution": "Provide the optimal solution with short intuition, one clean code block, and explicit LaTeX complexity.",
     "optimize": "Compare the current approach with a better one. State old and new complexities in LaTeX and explain the upgrade path without fluff.",
@@ -498,6 +501,12 @@ class AIService:
                 }
             raise ValueError("Missing GROQ_API_KEY. Add it to your root .env or apps/server/.env file.")
 
+        if mode == "complexity":
+            return {
+                "answer": self._generate_complexity_fallback(payload.get("problem") or {}, (payload.get("userCode") or "").strip()),
+                "suggestedNextStep": self._suggest_next_step(mode)
+            }
+
         try:
             answer = self._request_groq(payload, api_key)
         except ValueError as error:
@@ -514,6 +523,11 @@ class AIService:
                 answer = local_hint
 
         if mode == "explain" and len(answer) < 25:
+            local_explanation = self._generate_concise_explanation(payload.get("problem"))
+            if local_explanation:
+                answer = local_explanation
+
+        if mode == "explain" and ("```" in answer or "### Code" in answer or "Algorithm hint" in answer):
             local_explanation = self._generate_concise_explanation(payload.get("problem"))
             if local_explanation:
                 answer = local_explanation
@@ -693,6 +707,17 @@ class AIService:
                 "Each step must be plain English and problem-specific.",
                 "Do not include code.",
             ])
+        if mode == "explain":
+            return "\n".join([
+                "Use this exact section order:",
+                "### Goal",
+                "### Rules",
+                "### Small example",
+                "### What makes it tricky",
+                "Do not give the algorithm.",
+                "Do not give the direct solution steps.",
+                "Do not include code.",
+            ])
         if mode == "debug":
             return "\n".join([
                 "Use this exact section order when relevant:",
@@ -700,6 +725,7 @@ class AIService:
                 "### Why it breaks",
                 "### Fix",
                 "### Corrected code",
+                "Leave one blank line after each heading.",
                 "Keep the answer focused on the student's code, not generic advice.",
             ])
         if mode == "complexity":
@@ -707,8 +733,9 @@ class AIService:
                 "Use this exact section order:",
                 "### Complexity",
                 "### Why",
-                "### Better approach",
-                "If no student code is present, explicitly say that the complexity is for the standard accepted approach.",
+                "Leave one blank line after each heading.",
+                "Keep the whole answer very short.",
+                "If no student code is present, explicitly say you are assuming the standard accepted approach.",
                 "Write every complexity in LaTeX, for example `\\( O(n \\log n) \\)`.",
             ])
         if mode == "optimize":
@@ -725,6 +752,7 @@ class AIService:
                 "### Idea",
                 "### Code",
                 "### Complexity",
+                "Leave one blank line after each heading.",
                 "Return exactly one fenced code block.",
             ])
         if mode == "dry_run":
@@ -732,6 +760,7 @@ class AIService:
                 "Use this exact section order:",
                 "### Example",
                 "### Dry run",
+                "Leave one blank line after each heading.",
                 "Use numbered steps.",
                 "Mention the actual values that change at each step.",
             ])
@@ -887,8 +916,10 @@ class AIService:
         if mode == "hint":
             return 240
         if mode == "explain":
-            return 320
-        if mode in {"complexity", "dry_run"}:
+            return 220
+        if mode == "complexity":
+            return 180
+        if mode == "dry_run":
             return 650
         if mode in {"debug", "optimize"}:
             return 900
@@ -954,15 +985,12 @@ class AIService:
             better = "The next improvement usually comes from reducing repeated work with a better data structure."
 
         return "\n".join([
-            "### Complexity summary",
+            "### Complexity",
             f"- Time: {time}",
             f"- Space: {space}",
             "",
             "### Why",
-            "The complexity depends on how many times you scan the input and whether you store extra data for fast lookup.",
-            "",
-            "### Optimization note",
-            better,
+            "This comes from the number of passes over the input and the amount of extra storage used.",
         ])
 
     def _generate_debug_fallback(self, problem: dict[str, Any], code: str, language: str) -> str:
