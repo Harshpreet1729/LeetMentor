@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from html import unescape
 from typing import Any
 
+import requests
+
 
 DEFAULT_GRAPHQL_URL = "https://leetcode.com/graphql"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
@@ -84,7 +86,6 @@ ASSISTANT_SYSTEM_PROMPT = """You are a student-friendly LeetCode DSA assistant.
 Your goal is to help students learn, not just copy answers.
 Always explain in simple language.
 If the student asks for a hint, give only a hint and do not reveal the full solution.
-If the student asks for full code, provide clean accepted code with explanation, dry run, edge cases, and time and space complexity.
 If the student shares code, first identify what the code is trying to do, then find mistakes, then explain the fix.
 Never invent problem statements.
 Use only the provided problem context.
@@ -103,19 +104,20 @@ Response rules:
 - Prefer compact answers over long essays.
 - Do not shame the student.
 - Do not overcomplicate beginner explanations.
-- For hint mode, stay short and directional.
+- For hint mode, stay short, specific, and problem-aware.
 - For hint mode, never include full code.
-- For hint mode, return exactly 2 short lines:
-Direction: ...
-Think next: ...
-- For hint mode, keep the whole answer under 60 words unless the student explicitly asks for more detail."""
+- For hint level 1, use the heading `### Starting hint` and describe the best first move.
+- For hint level 2, use the heading `### Directional hint` and describe the decision flow or checkpoint logic.
+- For hint level 3, use the heading `### Algorithm hint` and give a numbered English-only algorithm outline.
+- For dry run mode, use the actual sample values from the problem whenever possible.
+- For complexity mode, analyze the student's code if it is present. If it is absent, clearly say you are assuming the standard approach."""
 
 MODE_GUIDANCE = {
-    "hint": "Give a progressive hint only. Respect hint level. Keep it short, actionable, and under 90 words. Do not use full code.",
+    "hint": "Give a progressive hint only. Respect hint level exactly. Level 1 is a starting hint, level 2 is a directional hint, and level 3 is an algorithm hint with numbered English steps. Do not use full code.",
     "explain": "Explain the problem briefly. Include the goal, one small example, and the core idea. Use LaTeX if a formula appears.",
     "debug": "Review the student's actual code. Identify the exact bug, explain why it fails on one concrete case, and show the corrected version in a fenced code block only if needed.",
-    "complexity": "State the current time and space complexity precisely using LaTeX, then say whether a better approach exists and what its complexity would be.",
-    "dry_run": "Give a short step-by-step dry run on one example only. Keep state transitions clear.",
+    "complexity": "State the current time and space complexity precisely using LaTeX. If student code is present, analyze that code. If not, clearly say you are assuming the common accepted approach for this problem. Then say whether a better approach exists.",
+    "dry_run": "Dry run one real sample from the problem. Use the actual values from the example, show the changing state clearly, and explain what each step is doing.",
     "full_solution": "Provide the optimal solution with short intuition, one clean code block, and explicit LaTeX complexity.",
     "optimize": "Compare the current approach with a better one. State old and new complexities in LaTeX and explain the upgrade path without fluff.",
 }
@@ -132,6 +134,7 @@ class ProblemContext:
     statement: str
     examples: list[str]
     constraints: list[str]
+    example_cards: list[dict[str, Any]]
     acceptance_rate: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -145,6 +148,7 @@ class ProblemContext:
             "statement": self.statement,
             "examples": self.examples,
             "constraints": self.constraints,
+            "exampleCards": self.example_cards,
             "acceptanceRate": self.acceptance_rate,
         }
 
@@ -275,7 +279,7 @@ class LeetCodeService:
 
     def _map_question(self, question: dict[str, Any], link: str) -> ProblemContext:
         stats = json.loads(question["stats"]) if question.get("stats") else {}
-        statement, examples, constraints = self._extract_sections(question.get("content") or "")
+        statement, examples, constraints, example_cards = self._extract_sections(question.get("content") or "")
         return ProblemContext(
             title=question["title"],
             title_slug=question["titleSlug"],
@@ -286,35 +290,134 @@ class LeetCodeService:
             statement=statement,
             examples=examples,
             constraints=constraints,
+            example_cards=example_cards,
             acceptance_rate=self._parse_acceptance_rate(stats.get("acRate")),
         )
 
-    def _extract_sections(self, content: str) -> tuple[str, list[str], list[str]]:
-        plain_text = re.sub(r"\n{2,}", "\n\n", self._html_to_text(content)).strip()
-        parts = re.split(r"Example \d+:", plain_text, flags=re.IGNORECASE)
-        statement = parts[0].strip() if parts else plain_text
-        examples = [match.strip() for match in re.findall(r"Example\s+\d+:\s*([\s\S]*?)(?=Example\s+\d+:|Constraints:|$)", plain_text, flags=re.IGNORECASE)]
+    def _extract_sections(self, content: str) -> tuple[str, list[str], list[str], list[dict[str, Any]]]:
+        plain_text = self._normalize_problem_text(self._html_to_text(content))
+
+        statement_match = re.split(r"\bExample\s+\d+\s*:", plain_text, maxsplit=1, flags=re.IGNORECASE)
+        statement = self._normalize_problem_text(statement_match[0])
+        statement = re.sub(r"\bConstraints\s*:\s*$", "", statement, flags=re.IGNORECASE).strip()
+
+        example_cards: list[dict[str, Any]] = []
+        raw_examples = re.findall(
+            r"Example\s+(\d+)\s*:\s*([\s\S]*?)(?=Example\s+\d+\s*:|Constraints\s*:|$)",
+            plain_text,
+            flags=re.IGNORECASE,
+        )
+        for number, block in raw_examples:
+            card = self._parse_example_block(block, number)
+            if card:
+                example_cards.append(card)
+
+        examples = [self._example_card_to_text(card) for card in example_cards]
 
         constraints: list[str] = []
-        match = re.search(r"Constraints:\s*([\s\S]*)$", plain_text, flags=re.IGNORECASE)
-        if match:
-            constraints = []
-            for raw_line in match.group(1).splitlines():
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.startswith("-"):
-                    line = line[1:].strip()
-                constraints.append(line)
+        constraint_match = re.search(r"Constraints\s*:\s*([\s\S]*)$", plain_text, flags=re.IGNORECASE)
+        if constraint_match:
+            constraints = self._extract_constraint_lines(constraint_match.group(1))
 
-        return statement, examples, constraints
+        return statement, examples, constraints, example_cards
 
     def _html_to_text(self, content: str) -> str:
-        text = content.replace("<pre>", "\n").replace("</pre>", "\n").replace("<li>", "- ").replace("</li>", "\n")
+        text = content
+        text = re.sub(r"<sup>(.*?)</sup>", r"^\1", text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"<sub>(.*?)</sub>", r"_\1", text, flags=re.IGNORECASE | re.DOTALL)
+        text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"</(p|div|section|article|pre|ul|ol|table|thead|tbody|tfoot|tr|h1|h2|h3|h4|h5|h6)>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"<li[^>]*>", "- ", text, flags=re.IGNORECASE)
+        text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"</(td|th)>", " | ", text, flags=re.IGNORECASE)
+        text = re.sub(r"<(td|th)[^>]*>", "", text, flags=re.IGNORECASE)
         text = re.sub(r"<[^>]+>", " ", text)
         text = unescape(text)
-        text = re.sub(r"\s+\n", "\n", text)
+        text = text.replace("\xa0", " ")
+        text = re.sub(r"[ \t]+\n", "\n", text)
+        text = re.sub(r"\n[ \t]+", "\n", text)
+        text = re.sub(r"[ \t]{2,}", " ", text)
         return text
+
+    def _normalize_problem_text(self, text: str) -> str:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = re.sub(r"[ \t]+\n", "\n", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+        text = re.sub(r"\(\s+", "(", text)
+        text = re.sub(r"\s+\)", ")", text)
+        return text.strip()
+
+    def _parse_example_block(self, block: str, number: str) -> dict[str, Any] | None:
+        cleaned = self._normalize_problem_text(block)
+        if not cleaned:
+            return None
+
+        sections: dict[str, str] = {}
+        labels = ("Input", "Output", "Explanation")
+        for label in labels:
+            match = re.search(
+                rf"{label}\s*:\s*([\s\S]*?)(?=(?:Input|Output|Explanation)\s*:|$)",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                sections[label.lower()] = self._normalize_problem_text(match.group(1))
+
+        if sections:
+            consumed = cleaned
+            for label in labels:
+                consumed = re.sub(
+                    rf"{label}\s*:\s*([\s\S]*?)(?=(?:Input|Output|Explanation)\s*:|$)",
+                    "",
+                    consumed,
+                    flags=re.IGNORECASE,
+                )
+            notes = [line.strip(" -") for line in self._normalize_problem_text(consumed).splitlines() if line.strip(" -")]
+            card = {
+                "title": f"Example {number}",
+                "input": sections.get("input", ""),
+                "output": sections.get("output", ""),
+                "explanation": sections.get("explanation", ""),
+                "notes": notes,
+            }
+            return card
+
+        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        return {
+            "title": f"Example {number}",
+            "body": "\n".join(lines),
+        }
+
+    def _example_card_to_text(self, card: dict[str, Any]) -> str:
+        pieces = [card.get("title", "Example")]
+        if card.get("input"):
+            pieces.append(f"Input: {card['input']}")
+        if card.get("output"):
+            pieces.append(f"Output: {card['output']}")
+        if card.get("explanation"):
+            pieces.append(f"Explanation: {card['explanation']}")
+        for note in card.get("notes") or []:
+            pieces.append(note)
+        if card.get("body"):
+            pieces.append(card["body"])
+        return "\n".join(piece for piece in pieces if piece)
+
+    def _extract_constraint_lines(self, raw_text: str) -> list[str]:
+        cleaned = self._normalize_problem_text(raw_text)
+        if not cleaned:
+            return []
+
+        constraints: list[str] = []
+        for raw_line in cleaned.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            line = re.sub(r"^[\-*]\s*", "", line)
+            line = re.sub(r"\s+\|\s*$", "", line)
+            if line:
+                constraints.append(line)
+        return constraints
 
     def _cache_problem(self, problem: ProblemContext) -> None:
         for identifier in (
@@ -384,22 +487,6 @@ class AIService:
         if not mode:
             raise ValueError("Mode is required.")
 
-        if mode == "hint":
-            local_hint = self._generate_progressive_hint(payload.get("problem"), int(payload.get("hintLevel") or 1))
-            if local_hint:
-                return {
-                    "answer": local_hint,
-                    "suggestedNextStep": "Ask for the next hint level only if you still feel stuck.",
-                }
-
-        if mode == "explain":
-            local_explanation = self._generate_concise_explanation(payload.get("problem"))
-            if local_explanation:
-                return {
-                    "answer": local_explanation,
-                    "suggestedNextStep": "Ask for a hint if you want help choosing the approach."
-                }
-
         local_fallback = self._fallback_for_mode(payload)
 
         api_key = os.environ.get("GROQ_API_KEY")
@@ -452,29 +539,34 @@ class AIService:
                 **body,
                 "model": model,
             }
-            request = urllib.request.Request(
-                GROQ_CHAT_COMPLETIONS_URL,
-                data=json.dumps(request_body).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                },
-                method="POST",
-            )
             try:
-                with urllib.request.urlopen(request, timeout=22) as response:
-                    data = json.loads(response.read().decode("utf-8"))
+                response = requests.post(
+                    GROQ_CHAT_COMPLETIONS_URL,
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/125.0.0.0 Safari/537.36"
+                        ),
+                    },
+                    json=request_body,
+                    timeout=22,
+                )
+                if response.status_code >= 400:
+                    details = response.text
+                    if self._should_retry_model(response.status_code, details):
+                        last_error = ValueError(f"Groq model `{model}` is unavailable.")
+                        continue
+                    raise ValueError(self._format_groq_http_error(response.status_code, details))
+                data = response.json()
                 answer = self._extract_groq_answer(data)
                 if answer:
                     return answer
                 last_error = ValueError("Groq returned an empty response.")
-            except urllib.error.HTTPError as error:
-                details = self._read_error_text(error)
-                if self._should_retry_model(error.code, details):
-                    last_error = ValueError(f"Groq model `{model}` is unavailable.")
-                    continue
-                raise ValueError(f"Groq request failed: {error.code} {details}".strip()) from error
-            except urllib.error.URLError as error:
+            except requests.RequestException as error:
                 raise ValueError("Could not reach Groq. Check your internet connection and try again.") from error
 
         raise last_error or ValueError("No working Groq model was available.")
@@ -497,6 +589,16 @@ class AIService:
             return error.read().decode("utf-8")
         except Exception:
             return ""
+
+    def _format_groq_http_error(self, status_code: int, details: str) -> str:
+        normalized = (details or "").lower()
+        if status_code == 403 and "1010" in normalized:
+            return (
+                "Groq blocked this app request at the network edge (403 / 1010). "
+                "The API key works, but this request shape or network path was rejected. "
+                "Please retry after restarting the app. If it continues, the app request path needs adjustment."
+            )
+        return f"Groq request failed: {status_code} {details}".strip()
 
     def _should_retry_model(self, status_code: int, details: str) -> bool:
         if status_code not in {400, 404}:
@@ -533,11 +635,12 @@ class AIService:
         problem = payload.get("problem") or {}
         mode = payload["mode"]
         examples = (problem.get("examples") or [])[:1] if mode == "hint" else (problem.get("examples") or [])
+        hint_level = int(payload.get("hintLevel") or 1)
         pieces = [
             f"Mode: {mode}",
             f"Mode guidance: {MODE_GUIDANCE[mode]}",
-            f"Required response shape:\n{self._response_contract(mode)}",
-            f"Hint level: {payload.get('hintLevel')}" if payload.get("hintLevel") else "",
+            f"Required response shape:\n{self._response_contract(mode, hint_level)}",
+            f"Hint level: {hint_level}" if mode == "hint" else "",
             f"Preferred language: {payload.get('language') or 'C++'}",
             f"Student question: {payload.get('userQuestion')}" if payload.get("userQuestion") else "",
         ]
@@ -565,12 +668,30 @@ class AIService:
 
         return "\n\n".join(piece for piece in pieces if piece)
 
-    def _response_contract(self, mode: str) -> str:
+    def _response_contract(self, mode: str, hint_level: int = 1) -> str:
         if mode == "hint":
+            if hint_level == 1:
+                return "\n".join([
+                    "Use this exact section shape:",
+                    "### Starting hint",
+                    "Write 2 or 3 short sentences.",
+                    "Tell the student the best first move for this exact problem.",
+                    "Do not include code.",
+                ])
+            if hint_level == 2:
+                return "\n".join([
+                    "Use this exact section shape:",
+                    "### Directional hint",
+                    "Write 2 to 4 short sentences.",
+                    "Describe the flow of the approach and the key checkpoint decisions.",
+                    "Do not include code.",
+                ])
             return "\n".join([
-                "Return exactly 2 lines.",
-                "Line 1: Direction: ...",
-                "Line 2: Think next: ...",
+                "Use this exact section shape:",
+                "### Algorithm hint",
+                "Then write exactly 4 numbered steps.",
+                "Each step must be plain English and problem-specific.",
+                "Do not include code.",
             ])
         if mode == "debug":
             return "\n".join([
@@ -585,7 +706,9 @@ class AIService:
             return "\n".join([
                 "Use this exact section order:",
                 "### Complexity",
+                "### Why",
                 "### Better approach",
+                "If no student code is present, explicitly say that the complexity is for the standard accepted approach.",
                 "Write every complexity in LaTeX, for example `\\( O(n \\log n) \\)`.",
             ])
         if mode == "optimize":
@@ -609,6 +732,8 @@ class AIService:
                 "Use this exact section order:",
                 "### Example",
                 "### Dry run",
+                "Use numbered steps.",
+                "Mention the actual values that change at each step.",
             ])
         return "\n".join([
             "Use short sections.",
@@ -631,47 +756,87 @@ class AIService:
 
         tags = [tag.lower() for tag in problem.get("tags", [])]
         title = problem.get("title", "this problem")
+        example = self._extract_example_text(problem)
 
         if "hash table" in tags:
             if hint_level == 1:
-                return "### Directional hint\nAvoid checking every pair. Think about a way to know missing values faster while scanning once."
+                return "### Starting hint\nStart with one left-to-right pass. For each value, ask what matching value would immediately complete the answer before you store the current value."
             if hint_level == 2:
-                return "### Hint for the approach\nUse a hash table to remember values you have already seen, then ask what partner value is needed."
-            return "### Hint from resolution\nWalk through the array once. For each number, compute the needed value, check if it is already stored, otherwise store the current number."
+                return "### Directional hint\nKeep a lookup of what you have already processed. At each step, compute the needed partner first, check whether it already exists, and only then add the current value."
+            return "\n".join([
+                "### Algorithm hint",
+                "1. Create a lookup table for values you have already seen.",
+                "2. Scan the input from left to right and compute the partner needed for the current value.",
+                "3. If that partner is already in the lookup table, use the stored position and the current position to form the answer.",
+                "4. Otherwise, store the current value with its position and continue.",
+            ])
 
         if "two pointers" in tags and "linked list" in tags:
             if hint_level == 1:
-                return "### Directional hint\nStay inside the linked list. You do not need an extra array to find the answer."
+                return "### Starting hint\nWork directly on the linked list instead of copying values out. Try finding the key node with moving pointers before you change any links."
             if hint_level == 2:
-                return "### Hint for the approach\nUse slow and fast pointers to find the middle, and keep track of the node before slow."
-            return "### Hint from resolution\nMove slow by one and fast by two. When fast finishes, delete the node at slow by reconnecting the previous node."
+                return "### Directional hint\nMove one pointer slowly and one quickly so the slow pointer reaches the target position at the right time. Keep track of the node just before it, because that link is what you will update."
+            return "\n".join([
+                "### Algorithm hint",
+                "1. Initialize slow and fast pointers at the head and also keep a previous pointer for the slow pointer.",
+                "2. Move slow by one step and fast by two steps until fast reaches the end condition for the target node.",
+                "3. Once slow is on the node to remove, reconnect the previous node so it skips the slow node.",
+                "4. Return the head of the updated linked list.",
+            ])
 
         if "binary search" in tags:
             if hint_level == 1:
-                return "### Directional hint\nThink in terms of an answer range and a yes or no check."
+                return "### Starting hint\nFirst identify what the search space is: an index range or an answer range. Then think about one middle value you can test to decide which half is still valid."
             if hint_level == 2:
-                return "### Hint for the approach\nUse binary search on the possible answer, and test whether a candidate value is feasible."
-            return "### Hint from resolution\nKeep low and high bounds, test the middle value, and discard the half that cannot contain a valid answer."
+                return "### Directional hint\nAt each step, test the middle candidate and decide whether the answer must be to its left or right. Your key job is defining the condition that tells you which half can be discarded safely."
+            return "\n".join([
+                "### Algorithm hint",
+                "1. Set the low and high boundaries of the valid search space.",
+                "2. Repeatedly compute the middle candidate.",
+                "3. Evaluate the middle candidate and use the result to discard one half of the search space.",
+                "4. Continue until the stopping condition gives you the final answer.",
+            ])
 
         if "dynamic programming" in tags:
             if hint_level == 1:
-                return "### Directional hint\nTry to solve a smaller version first, then build the larger answer from it."
+                return "### Starting hint\nStart by defining one smaller subproblem whose answer helps build the full answer. Ask what information must be known before you can solve position `i`."
             if hint_level == 2:
-                return "### Hint for the approach\nDefine one DP state clearly, then describe how it transitions from earlier states."
-            return "### Hint from resolution\nFill the DP table in dependency order so each new state is computed from already solved states."
+                return "### Directional hint\nWrite down the DP state first, then decide which earlier states can transition into it. After that, choose an order that guarantees those earlier states are already solved."
+            return "\n".join([
+                "### Algorithm hint",
+                "1. Define the DP state so each entry has one clear meaning.",
+                "2. Write the transition using only earlier states that are already known.",
+                "3. Fill the states in dependency order from smallest to largest.",
+                "4. Return the state that represents the full problem answer.",
+            ])
 
         if "graph" in tags or "breadth-first search" in tags or "depth-first search" in tags:
             if hint_level == 1:
-                return f"### Directional hint\nTreat {title} like a state-exploration problem, not just a raw array question."
+                return f"### Starting hint\nTreat {title} as a state exploration problem. First decide what one node or one state represents before choosing how to traverse it."
             if hint_level == 2:
-                return "### Hint for the approach\nModel each position or condition as a node, then explore neighbors while marking visited states."
-            return "### Hint from resolution\nPick BFS if you want the shortest number of moves, or DFS if you only need to explore all reachable states."
+                return "### Directional hint\nBuild the neighbor relation first, then make sure visited states are marked early so you do not repeat work. Use BFS when distance matters and DFS when full exploration is enough."
+            return "\n".join([
+                "### Algorithm hint",
+                "1. Model the valid positions or conditions as graph states.",
+                "2. Build or generate the neighbors reachable from each state.",
+                "3. Traverse the states while marking visited ones so each state is processed once.",
+                "4. Return the answer collected from the traversal result that matches the problem goal.",
+            ])
 
         if hint_level == 1:
-            return "### Directional hint\nLook for the one observation that removes repeated work."
+            starting_line = f"Start by restating what one step of progress looks like in {title}."
+            if example:
+                starting_line += f" Use the first sample as your guide: {example}"
+            return f"### Starting hint\n{starting_line} Ask what information you need to keep after each step so the next step becomes easier."
         if hint_level == 2:
-            return "### Hint for the approach\nChoose a data structure that lets you answer the key repeated question faster."
-        return "### Hint from resolution\nWrite the steps in plain English first: what to track, when to update it, and when to return the answer."
+            return "### Directional hint\nFocus on the repeated decision in the problem and decide what should be tracked before moving forward. Once that tracked state is clear, the rest of the flow usually becomes one pass or one ordered traversal."
+        return "\n".join([
+            "### Algorithm hint",
+            "1. Identify the exact state or helper structure you need to maintain.",
+            "2. Process the input in the order that keeps previously computed information useful.",
+            "3. Update that state after each step according to the current element or condition.",
+            "4. Return the final value once the full traversal or construction is complete.",
+        ])
 
     def _generate_concise_explanation(self, problem: dict[str, Any] | None) -> str | None:
         if not problem:
@@ -720,13 +885,13 @@ class AIService:
 
     def _max_tokens_for_mode(self, mode: str) -> int:
         if mode == "hint":
-            return 140
+            return 240
         if mode == "explain":
-            return 260
+            return 320
         if mode in {"complexity", "dry_run"}:
-            return 420
+            return 650
         if mode in {"debug", "optimize"}:
-            return 700
+            return 900
         if mode == "full_solution":
             return 1100
         return 400

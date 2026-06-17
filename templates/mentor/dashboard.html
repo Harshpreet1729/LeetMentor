@@ -13,7 +13,7 @@
       <p class="eyebrow">LeetCode workspace</p>
       <h1>Solve one problem at a time.</h1>
       <p class="hero__body">
-        Load a problem, write your solution, and get focused help for debugging, complexity, optimization, and full solutions.
+        Load a problem, write your solution, and get focused help for hints, debugging, complexity, and dry runs.
       </p>
     </div>
     <div class="hero__meta">
@@ -68,11 +68,11 @@
           <div class="detail-columns">
             <section>
               <h3>Examples</h3>
-              <pre id="problemExamples" class="detail-box">No examples yet.</pre>
+              <div id="problemExamples" class="detail-box detail-box--rich">No examples yet.</div>
             </section>
             <section>
               <h3>Constraints</h3>
-              <pre id="problemConstraints" class="detail-box">No constraints yet.</pre>
+              <div id="problemConstraints" class="detail-box detail-box--rich">No constraints yet.</div>
             </section>
           </div>
         </details>
@@ -94,9 +94,9 @@
               <option>JavaScript</option>
             </select>
             <select id="hintLevelSelect" class="input input--select">
-              <option value="1">Directional hint</option>
-              <option value="2">Hint for the approach</option>
-              <option value="3">Hint from resolution</option>
+              <option value="1">Starting hint</option>
+              <option value="2">Directional hint</option>
+              <option value="3">Algorithm hint</option>
             </select>
           </div>
         </div>
@@ -134,16 +134,15 @@
             <button class="button button--mode active" data-mode="hint" type="button">Hint</button>
             <button class="button button--mode" data-mode="explain" type="button">Explain the problem</button>
             <button class="button button--mode" data-mode="debug" type="button">Review my code</button>
+            <button id="askChatgptBtn" class="button button--mode button--ghost" type="button">Ask ChatGPT</button>
           </div>
-          <p class="action-note">Use the advanced actions when you want a stricter complexity, optimization, or full-solution response.</p>
+          <p class="action-note">Hints are progressive now: start, direction, then algorithm flow. Use advanced actions only when you want a tighter complexity check or a real dry run.</p>
 
           <details class="detail-toggle detail-toggle--compact">
             <summary>Advanced actions</summary>
             <div class="action-grid action-grid--advanced">
               <button class="button button--mode button--subtle" data-mode="complexity" type="button">Complexity</button>
               <button class="button button--mode button--subtle" data-mode="dry_run" type="button">Dry run</button>
-              <button class="button button--mode button--subtle" data-mode="optimize" type="button">Optimize</button>
-              <button class="button button--mode button--subtle" data-mode="full_solution" type="button">Full solution</button>
             </div>
           </details>
         </div>

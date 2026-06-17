@@ -26,6 +26,7 @@
     assistantStatus: byId("assistantStatus"),
     assistantOutput: byId("assistantOutput"),
     nextStep: byId("nextStep"),
+    askChatgptBtn: byId("askChatgptBtn"),
     clearOutputBtn: byId("clearOutputBtn"),
     modeButtons: Array.from(document.querySelectorAll("[data-mode]"))
   };
@@ -139,6 +140,133 @@
     }
   }
 
+  function renderMultilineText(text) {
+    return escapeHtml(String(text || "")).replace(/\n/g, "<br>");
+  }
+
+  function renderProblemExamples(exampleCards, exampleStrings) {
+    const cards = Array.isArray(exampleCards) ? exampleCards : [];
+    const examples = Array.isArray(exampleStrings) ? exampleStrings : [];
+
+    if (!cards.length && !examples.length) {
+      els.problemExamples.innerHTML = '<p class="detail-empty">No examples available.</p>';
+      return;
+    }
+
+    if (cards.length) {
+      els.problemExamples.innerHTML = cards
+        .map((card, index) => {
+          const parts = [];
+          const title = escapeHtml(card.title || `Example ${index + 1}`);
+
+          if (card.input) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">Input</span><p>${renderMultilineText(card.input)}</p></div>`
+            );
+          }
+          if (card.output) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">Output</span><p>${renderMultilineText(card.output)}</p></div>`
+            );
+          }
+          if (card.explanation) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">Explanation</span><p>${renderMultilineText(card.explanation)}</p></div>`
+            );
+          }
+          if (Array.isArray(card.notes) && card.notes.length) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">Notes</span><ul class="detail-list">${card.notes.map((note) => `<li>${renderMultilineText(note)}</li>`).join("")}</ul></div>`
+            );
+          }
+          if (card.body) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">Details</span><p>${renderMultilineText(card.body)}</p></div>`
+            );
+          }
+
+          return `<article class="example-card"><h4 class="example-card__title">${title}</h4>${parts.join("")}</article>`;
+        })
+        .join("");
+      return;
+    }
+
+    els.problemExamples.innerHTML = examples
+      .map((example, index) => `<article class="example-card"><h4 class="example-card__title">Example ${index + 1}</h4><p>${renderMultilineText(example)}</p></article>`)
+      .join("");
+  }
+
+  function renderProblemConstraints(constraints) {
+    const items = Array.isArray(constraints) ? constraints.filter(Boolean) : [];
+
+    if (!items.length) {
+      els.problemConstraints.innerHTML = '<p class="detail-empty">No constraints available.</p>';
+      return;
+    }
+
+    els.problemConstraints.innerHTML = `<ul class="constraint-list">${items
+      .map((constraint) => `<li>${renderMultilineText(constraint)}</li>`)
+      .join("")}</ul>`;
+  }
+
+  function buildChatGptPrompt() {
+    if (!state.problem) {
+      return "";
+    }
+
+    const problem = state.problem;
+    const pieces = [
+      `Help me solve this LeetCode problem without directly dumping the full solution unless I ask for it.`,
+      "",
+      `Title: ${problem.questionFrontendId}. ${problem.title}`,
+      `Difficulty: ${problem.difficulty || "Unknown"}`,
+      `Tags: ${(problem.tags || []).join(", ") || "Not available"}`,
+      "",
+      "Problem statement:",
+      problem.statement || "Not available",
+    ];
+
+    if (Array.isArray(problem.examples) && problem.examples.length) {
+      pieces.push("", "Examples:", problem.examples.join("\n\n"));
+    }
+
+    if (Array.isArray(problem.constraints) && problem.constraints.length) {
+      pieces.push("", "Constraints:", problem.constraints.map((item) => `- ${item}`).join("\n"));
+    }
+
+    if (els.codeInput.value.trim()) {
+      pieces.push("", `My current ${els.languageSelect.value} code:`, "```", els.codeInput.value.trim(), "```");
+    }
+
+    if (els.questionInput.value.trim()) {
+      pieces.push("", `What I want help with: ${els.questionInput.value.trim()}`);
+    }
+
+    return pieces.join("\n");
+  }
+
+  async function openChatGptWithProblem() {
+    if (!state.problem) {
+      setText(els.assistantStatus, "Load a problem first so there is something to send.");
+      return;
+    }
+
+    const prompt = buildChatGptPrompt();
+
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setText(els.assistantStatus, "Problem copied. ChatGPT opened in a new tab.");
+      setText(els.nextStep, "Next step: paste with Ctrl+V in ChatGPT, then press Enter.");
+      els.nextStep.classList.remove("hidden");
+    } catch (error) {
+      setText(els.assistantStatus, "ChatGPT opened, but clipboard copy was blocked by the browser.");
+      setText(els.nextStep, "Next step: copy the problem manually and paste it into ChatGPT.");
+      els.nextStep.classList.remove("hidden");
+    }
+
+    window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
+  }
+
   function getCsrfToken() {
     const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
     if (metaToken && metaToken !== "NOTPROVIDED") {
@@ -157,8 +285,8 @@
     state.problem = problem;
     setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
     setText(els.problemStatement, problem.statement || "No statement available.");
-    setText(els.problemExamples, (problem.examples || []).join("\n\n") || "No examples available.");
-    setText(els.problemConstraints, (problem.constraints || []).join("\n") || "No constraints available.");
+    renderProblemExamples(problem.exampleCards, problem.examples);
+    renderProblemConstraints(problem.constraints);
 
     if (problem.link) {
       els.problemLink.href = problem.link;
@@ -225,6 +353,9 @@
 
     els.loadProblemBtn.disabled = isBusy;
     els.dailyBtn.disabled = isBusy;
+    if (els.askChatgptBtn) {
+      els.askChatgptBtn.disabled = isBusy;
+    }
   }
 
   async function fetchJson(url, options, timeoutMs = 25000) {
@@ -378,6 +509,9 @@
 
   els.dailyBtn.addEventListener("click", loadDaily);
   els.loadProblemBtn.addEventListener("click", loadProblem);
+  if (els.askChatgptBtn) {
+    els.askChatgptBtn.addEventListener("click", openChatGptWithProblem);
+  }
   els.clearOutputBtn.addEventListener("click", () => {
     setText(els.assistantStatus, "Output cleared.");
     renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");

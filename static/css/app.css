@@ -1,18 +1,18 @@
 :root {
-  --bg: #f3efe7;
-  --surface: rgba(255, 252, 247, 0.82);
-  --surface-raised: #fffaf2;
-  --text: #1f241f;
-  --muted: #6f756f;
-  --border: rgba(31, 36, 31, 0.11);
-  --accent: #1f6b57;
-  --accent-hover: #165847;
+  --bg: #090a0c;
+  --surface: rgba(22, 24, 29, 0.9);
+  --surface-raised: #1a1d22;
+  --text: #f3f4f6;
+  --muted: #969ca6;
+  --border: rgba(255, 255, 255, 0.1);
+  --accent: #ffffff;
+  --accent-hover: #ebedf0;
   --danger: #ef4444;
   --success: #22c55e;
-  --shadow: 0 18px 40px rgba(39, 42, 36, 0.08);
-  --radius-lg: 24px;
-  --radius-md: 18px;
-  --radius-sm: 14px;
+  --shadow: 0 22px 48px rgba(0, 0, 0, 0.28);
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
   --container: 1240px;
 }
 
@@ -28,8 +28,9 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(31, 107, 87, 0.08), transparent 28%),
-    radial-gradient(circle at 85% 10%, rgba(222, 180, 100, 0.12), transparent 16%),
+    radial-gradient(circle at 20% 0%, rgba(255, 122, 23, 0.12), transparent 24%),
+    radial-gradient(circle at 85% 8%, rgba(124, 58, 237, 0.12), transparent 18%),
+    radial-gradient(circle at 50% 100%, rgba(160, 195, 236, 0.08), transparent 22%),
     var(--bg);
   color: var(--text);
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
@@ -59,7 +60,7 @@ textarea {
   top: 0;
   z-index: 30;
   border-bottom: 1px solid var(--border);
-  background: rgba(243, 239, 231, 0.88);
+  background: rgba(10, 10, 12, 0.82);
   backdrop-filter: blur(12px);
 }
 
@@ -90,10 +91,10 @@ textarea {
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 1rem;
-  background: linear-gradient(180deg, rgba(31, 107, 87, 0.16), rgba(31, 107, 87, 0.06));
-  border: 1px solid rgba(31, 107, 87, 0.2);
-  color: var(--accent);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ffffff;
   font-weight: 700;
 }
 
@@ -110,7 +111,8 @@ textarea {
   color: var(--muted);
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
 .site-nav {
@@ -123,13 +125,15 @@ textarea {
   padding: 0.7rem 0.95rem;
   border-radius: 999px;
   color: var(--muted);
-  transition: color 180ms ease, background 180ms ease;
+  border: 1px solid transparent;
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease;
 }
 
 .site-nav a:hover,
 .site-nav a:focus-visible {
   color: var(--text);
   background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
   outline: none;
 }
 
@@ -142,8 +146,8 @@ textarea {
   flex-direction: column;
   gap: 0.3rem;
   border: 1px solid var(--border);
-  border-radius: 1rem;
-  background: rgba(255, 250, 242, 0.8);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text);
 }
 
@@ -169,7 +173,7 @@ textarea {
   padding: 1rem 1.125rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(255, 250, 242, 0.82);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .message--error {
@@ -209,8 +213,8 @@ textarea {
     gap: 0.4rem;
     padding: 0.75rem;
     border: 1px solid var(--border);
-    border-radius: 1.25rem;
-    background: rgba(255, 250, 242, 0.98);
+    border-radius: 1rem;
+    background: rgba(18, 20, 24, 0.98);
     box-shadow: var(--shadow);
     opacity: 0;
     pointer-events: none;
