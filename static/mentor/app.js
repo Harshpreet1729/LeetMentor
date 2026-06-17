@@ -389,21 +389,23 @@
     }
 
     const prompt = buildChatGptPrompt();
+    const quickPrompt = `Give me the solution of ${state.problem.questionFrontendId}. ${state.problem.title} on LeetCode.`;
+    const chatGptUrl = `https://chatgpt.com/?q=${encodeURIComponent(quickPrompt)}`;
 
     try {
       await navigator.clipboard.writeText(prompt);
       setStatusTone(els.assistantStatus, "success");
-      setText(els.assistantStatus, "Problem copied. ChatGPT opened in a new tab.");
-      setText(els.nextStep, "Next step: paste with Ctrl+V in ChatGPT, then press Enter.");
+      setText(els.assistantStatus, "ChatGPT opened with a prompt, and the full problem was copied.");
+      setText(els.nextStep, "Next step: if the prompt box is empty, paste the copied problem with Ctrl+V.");
       els.nextStep.classList.remove("hidden");
     } catch (error) {
-      setStatusTone(els.assistantStatus, "error");
-      setText(els.assistantStatus, "ChatGPT opened, but clipboard copy was blocked by the browser.");
-      setText(els.nextStep, "Next step: copy the problem manually and paste it into ChatGPT.");
+      setStatusTone(els.assistantStatus, "warning");
+      setText(els.assistantStatus, "ChatGPT opened with a prompt, but clipboard copy was blocked by the browser.");
+      setText(els.nextStep, "Next step: if you need more context than the title prompt, copy the problem manually.");
       els.nextStep.classList.remove("hidden");
     }
 
-    window.open("https://chatgpt.com/", "_blank", "noopener,noreferrer");
+    window.open(chatGptUrl, "_blank", "noopener,noreferrer");
   }
 
   function getCsrfToken() {
