@@ -1,166 +1,267 @@
 # LeetMentor
 
+LeetMentor is a local LeetCode practice workspace built for guided learning, not answer vending.
 
+Instead of copying a problem into a chatbot, waiting for a long reply, and pasting code back into LeetCode, the product keeps the full study loop in one place:
 
-LeetMentor is a local LeetCode workflow assistant. The point is not to dump a problem into ChatGPT, wait for a giant answer, and copy the final code back. The point is to stay inside one workspace, ask for only the help you need, and understand the pattern through hints, review, complexity, and optimization.
+- load a problem
+- think first
+- write your own attempt
+- ask for the smallest useful kind of help
+- iterate until you understand the pattern
 
-## Core Workflow
+## What It Is
+
+LeetMentor currently has two surfaces:
+
+- a Django web dashboard for a full-screen coding workspace
+- a Chrome extension sidebar for in-context practice on the LeetCode page
+
+The core assistant can:
+
+- explain a problem in simpler terms
+- give progressive hints
+- review your code
+- discuss complexity
+- run through samples
+- compare approaches
+- provide a full solution when you explicitly want one
+
+## Product Thesis
+
+Most AI-assisted coding flows remove the exact friction that helps people learn.
+
+That sounds convenient, but it often trains the wrong behavior:
+
+- ask too early
+- read passively
+- trust the answer before testing your own reasoning
+- optimize for completion instead of understanding
+
+LeetMentor is based on a different idea: the tool should support the student's reasoning, not replace it.
+
+## Learning Model
+
+The product is designed around four learning principles:
+
+1. Productive struggle matters.
+   A small amount of difficulty is useful because it forces pattern recognition, recall, and decision-making.
+
+2. Help should be progressive.
+   A directional nudge is better than a complete answer when the student is still capable of solving the problem.
+
+3. Review beats replacement.
+   Debugging your own attempt teaches more than reading a fresh solution from scratch.
+
+4. Full solutions should come late.
+   The clean solution is most valuable after the student has already formed and tested a mental model.
+
+## Why It Exists
 
 ```mermaid
 flowchart LR
-    A[Open LeetMentor] --> B[Load LeetCode problem]
-    B --> C[Read problem statement locally]
-    C --> D[Write your own attempt]
-    D --> E{What do you need next?}
-    E -->|Small push| F[Hint]
-    E -->|Problem understanding| G[Explain]
-    E -->|Bug hunting| H[Review my code]
-    E -->|Performance check| I[Complexity]
-    E -->|Make it better| J[Optimize]
-    E -->|Need final reference| K[Full solution]
-    F --> L[Iterate on your own code]
-    G --> L
-    H --> L
-    I --> L
-    J --> L
-    K --> M[Compare and learn]
-    L --> N[Submit on LeetCode]
-    M --> N
-```
-
-## Why This Exists
-
-```mermaid
-flowchart TB
-    subgraph Old_Flow["Copy-paste AI flow"]
-        A1[Open LeetCode] --> A2[Copy problem]
-        A2 --> A3[Paste into ChatGPT]
-        A3 --> A4[Copy your code]
-        A4 --> A5[Paste again]
-        A5 --> A6[Read long answer]
-        A6 --> A7[Copy AI code back]
+    subgraph A["Typical copy-paste AI loop"]
+        A1["Open LeetCode"]
+        A2["Copy the full problem"]
+        A3["Paste into chatbot"]
+        A4["Paste your code"]
+        A5["Read a long answer"]
+        A6["Copy the final code back"]
+        A1 --> A2 --> A3 --> A4 --> A5 --> A6
     end
 
-    subgraph New_Flow["LeetMentor flow"]
-        B1[Load problem] --> B2[Code locally]
-        B2 --> B3[Ask for exact help]
-        B3 --> B4[Learn through hints, review, and optimization]
-        B4 --> B5[Submit with understanding]
+    subgraph B["LeetMentor learning loop"]
+        B1["Load problem locally"]
+        B2["Write your own attempt"]
+        B3["Ask for the exact kind of help you need"]
+        B4["Revise, test, and understand"]
+        B5["Submit with clearer reasoning"]
+        B1 --> B2 --> B3 --> B4 --> B5
     end
 ```
 
-Short version:
+The difference is not only convenience. It changes the user's behavior:
 
 - less tab switching
-- less copy-paste friction
-- more learning from your own attempt
-- easier use of hints instead of instant full answers
+- less context loss
+- less temptation to jump straight to the final code
+- more repetition of the actual interview skill loop
 
-## Mentor Decision Tree
+## Core Study Loop
 
 ```mermaid
 flowchart TD
-    A[You are stuck] --> B{What kind of stuck?}
-    B -->|I do not know how to start| C[Hint]
-    B -->|I do not understand the problem| D[Explain]
-    B -->|My code is wrong| E[Review my code]
-    B -->|My code works but feels slow| F[Complexity]
-    B -->|I want a better approach| G[Optimize]
-    B -->|I want to compare with a clean answer| H[Full solution]
+    A["Load problem"] --> B["Read goal, examples, constraints"]
+    B --> C["Think before asking"]
+    C --> D["Write first attempt"]
+    D --> E{"What do you need next?"}
+    E -->|"Need a start"| F["Hint"]
+    E -->|"Need clarity"| G["Explain"]
+    E -->|"Code is failing"| H["Review my code"]
+    E -->|"Code works but may be slow"| I["Complexity / Optimize"]
+    E -->|"Need a final reference"| J["Full solution"]
+    F --> K["Update your approach"]
+    G --> K
+    H --> K
+    I --> K
+    K --> D
+    J --> L["Compare with your own version"]
+    L --> M["Submit and reflect"]
+    D --> M
 ```
 
-## Request Flow
+## Mentor Actions Explained
+
+Each action exists for a different stage of the learning process.
+
+```mermaid
+flowchart LR
+    A["Blocked before coding"] --> B["Hint"]
+    C["Confused about what the statement means"] --> D["Explain"]
+    E["Have code, but it fails"] --> F["Review my code"]
+    G["Have code, but unsure about efficiency"] --> H["Complexity"]
+    I["Accepted but want a stronger approach"] --> J["Optimize"]
+    K["Want to understand sample transitions"] --> L["Dry run"]
+    M["Need a final reference after trying"] --> N["Full solution"]
+```
+
+### Hint
+
+Use hint mode when you still want to solve the problem yourself.
+
+The ideal hint system is progressive:
+
+- level 1 should help you start
+- level 2 should guide the decision flow
+- level 3 should describe the solving algorithm without dumping full code
+
+### Explain
+
+Use explain mode when the statement itself is the blocker.
+
+This is for:
+
+- understanding the real goal
+- clarifying rules
+- unpacking tricky wording
+- reading a smaller example in plain language
+
+### Review My Code
+
+Use review mode after you have an honest attempt.
+
+This is the highest-leverage mode for learning because it forces the assistant to work on your reasoning instead of replacing it.
+
+### Complexity
+
+Use complexity mode when your logic works but you want to know whether it is strong enough for interviews or large inputs.
+
+### Optimize
+
+Use optimize mode when you want to improve the accepted version into a cleaner or more efficient one.
+
+### Dry Run
+
+Use dry run mode when you know the broad idea but lose track of state changes, pointer moves, or transitions.
+
+### Full Solution
+
+Use the full solution last, not first.
+
+It is most useful when:
+
+- you already tried
+- you want to compare structure
+- you want to confirm the standard accepted pattern
+
+## System Architecture
+
+```mermaid
+flowchart TB
+    U["User"] --> W["Django web dashboard"]
+    U --> X["Chrome extension sidebar"]
+
+    W --> M["Mentor service (Django)"]
+    X --> S["Express assistant server"]
+
+    M --> L["LeetCode GraphQL / problem data"]
+    S --> L
+
+    M --> G["Groq API"]
+    S --> G
+
+    X --> P["Shared package: types, constants, API contract"]
+    S --> P
+```
+
+## Request Lifecycle
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant UI as Django UI
-    participant LS as LeetCode Service
-    participant AI as Groq API
+    participant UI as Workspace
+    participant LC as LeetCode data layer
+    participant AI as Mentor model
 
-    U->>UI: Load problem / write code / choose action
-    UI->>LS: Fetch problem by number, slug, title, or URL
-    LS-->>UI: Problem statement, examples, constraints, tags
-    U->>UI: Ask for hint / review / optimize / solution
-    UI->>AI: Send problem context + code + mode
-    AI-->>UI: Structured answer with code blocks and LaTeX
-    UI-->>U: Render response in one workspace
+    U->>UI: Load problem
+    UI->>LC: Resolve number, slug, title, or URL
+    LC-->>UI: Statement, examples, constraints, tags
+    U->>UI: Write code and choose an action
+    UI->>AI: Send mode + problem context + optional code
+    AI-->>UI: Structured answer
+    UI-->>U: Render hint, explanation, review, or complexity output
 ```
 
-## Product Shape
+## Workspace Shape
+
+The web dashboard is designed as a three-zone study surface:
+
+- left rail for problem context
+- center for the code editor
+- right rail for mentor actions and responses
 
 ```mermaid
 flowchart LR
-    A[Problem loader] --> B[Workspace editor]
-    B --> C[Mentor actions]
-    C --> D[Structured response renderer]
-    D --> E[Hints]
-    D --> F[Code review]
-    D --> G[Complexity in LaTeX]
-    D --> H[Formatted code blocks]
+    A["Problem loader<br/>title, difficulty, tags, examples"] --> B["Code workspace<br/>editor, language, hint level"]
+    B --> C["Mentor rail<br/>actions, output, next step"]
 ```
 
-## What The App Does
+The extension serves a different purpose. It is meant to stay close to the live LeetCode page and provide:
 
-```mermaid
-mindmap
-  root((LeetMentor))
-    Problem Input
-      Daily challenge
-      Problem number
-      Title slug
-      Full LeetCode URL
-    Coding
-      C++
-      Python
-      Java
-      JavaScript
-    Mentor Modes
-      Hint
-      Explain
-      Review my code
-      Complexity
-      Dry run
-      Optimize
-      Full solution
-    Output Style
-      LaTeX for maths
-      Code fences
-      Compact sections
-      One-page workflow
-```
+- quick action access
+- live code pickup
+- compact mentor responses
+- a lower-friction debugging loop
 
-## API Requirement
+## Repository Map
 
 ```mermaid
 flowchart TD
-    A[LeetMentor starts] --> B{Do you have a Groq API key?}
-    B -->|Yes| C[Set GROQ_API_KEY in .env]
-    C --> D[AI features work]
-    B -->|No| E[Advanced AI responses cannot run properly]
+    A["manage.py"] --> B["leetcode_mentor_project/"]
+    B --> C["mentor/"]
+    C --> D["views.py, services.py, urls.py"]
+    C --> E["templates/mentor/"]
+    C --> F["static/mentor/"]
+
+    G["apps/server/"] --> H["Express API for extension"]
+    I["apps/extension/"] --> J["Chrome extension UI"]
+    K["packages/shared/"] --> L["Shared types and constants"]
+
+    H --> K
+    I --> K
 ```
-
-This project needs your own API key. It does not include a built-in unlimited AI service.
-
-You need:
-
-- a Groq account
-- a `GROQ_API_KEY`
-- an `AI_MODEL` value
 
 ## Setup
 
-```mermaid
-flowchart LR
-    A[Clone repo] --> B[Create .env]
-    B --> C[Add Django settings]
-    C --> D[Add GROQ_API_KEY]
-    D --> E[Run migrations]
-    E --> F[Start server]
-    F --> G[Open localhost:8000]
+### 1. Python workspace
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
 ```
 
-Use this `.env`:
+Create a `.env` file:
 
 ```env
 DJANGO_SECRET_KEY=replace_me
@@ -171,7 +272,7 @@ AI_MODEL=llama-3.3-70b-versatile
 LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
 ```
 
-Run:
+Run migrations and start the Django app:
 
 ```bash
 python manage.py migrate
@@ -184,72 +285,116 @@ Open:
 http://127.0.0.1:8000
 ```
 
+### 2. Node workspace for the extension backend
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the extension API server:
+
+```bash
+npm run dev:server
+```
+
+This runs the assistant backend used by the Chrome extension on:
+
+```text
+http://localhost:4000
+```
+
+### 3. Extension build
+
+Build the extension workspace:
+
+```bash
+npm run dev:extension
+```
+
+## API Requirement
+
+The project expects your own Groq API key. It does not ship with a built-in hosted AI plan.
+
+You need:
+
+- a Groq account
+- a `GROQ_API_KEY`
+- an `AI_MODEL` value
+
+Without that key, rich mentor responses will be limited or unavailable depending on the surface.
+
 ## Recommended Usage Pattern
 
 ```mermaid
 flowchart TD
-    A[Load a problem] --> B[Think first]
-    B --> C[Write your own attempt]
-    C --> D{Need help?}
-    D -->|Yes, but not full code| E[Use Hint]
-    D -->|My code is failing| F[Use Review my code]
-    D -->|I want better performance| G[Use Complexity or Optimize]
-    D -->|I want a clean reference answer| H[Use Full solution last]
+    A["Load problem"] --> B["Think for a few minutes first"]
+    B --> C["Write a rough attempt"]
+    C --> D{"Still blocked?"}
+    D -->|"Need a starting push"| E["Hint"]
+    D -->|"Statement is unclear"| F["Explain"]
+    D -->|"Bug in my code"| G["Review my code"]
+    D -->|"Need efficiency check"| H["Complexity / Optimize"]
+    D -->|"Need walkthrough"| I["Dry run"]
+    D -->|"Need final reference"| J["Full solution"]
     E --> C
     F --> C
     G --> C
-    H --> I[Compare with your version]
-```
-
-## Repository Map
-
-```mermaid
-flowchart TB
-    A[manage.py]
-    B[leetcode_mentor_project/]
-    C[mentor/]
-    D[templates/mentor/]
-    E[static/mentor/]
-    F[apps/server/]
-    G[apps/extension/]
-    H[packages/shared/]
-
-    A --> B
-    B --> C
-    C --> D
-    C --> E
-    C -. legacy support .-> F
-    F -. shared types .-> H
-    G -. shared types .-> H
+    H --> C
+    I --> C
+    J --> K["Compare, then rewrite in your own words"]
 ```
 
 ## Practical Theory
 
-LeetMentor is best when you use it like a study partner, not like a code vending machine.
+LeetMentor works best when it behaves like a disciplined mentor:
 
-- `Hint` is for momentum.
-- `Review my code` is for debugging your own logic.
-- `Complexity` and `Optimize` are for pushing from accepted to strong.
-- `Full solution` is most useful after you already tried.
+- it should not rescue too early
+- it should not confuse verbosity with usefulness
+- it should push the student back into active reasoning
+- it should make code review and reflection easier than blind copying
 
-If you skip straight to the final solution every time, you will finish problems. If you loop through hints, review, and optimization, you will build actual interview skill.
+The product becomes valuable when the student repeatedly experiences this loop:
+
+1. form an idea
+2. test it in code
+3. notice the gap
+4. ask for a targeted nudge
+5. revise the mental model
+
+That loop is where interview skill is actually built.
 
 ## Current Stack
 
-- Django backend and UI
-- Groq API for AI responses
+- Django for the local web app
+- Express for the extension backend
+- React in the extension UI
+- Groq API for mentor responses
 - LeetCode GraphQL for problem data
-- SQLite locally
-- LaTeX rendering through MathJax
+- SQLite for local Django persistence
+- MathJax for LaTeX rendering in formatted mentor output
 
-## Good Next Improvements
+## Near-Term Improvements
 
 ```mermaid
 flowchart LR
-    A[Current app] --> B[Monaco editor]
-    A --> C[Saved sessions]
-    A --> D[User auth]
-    A --> E[Postgres for deployment]
-    A --> F[Better language-specific review]
-    A --> G[Test coverage]
+    A["Current product"] --> B["Consistent 3-level hint ladder"]
+    A --> C["Better extension compact mode"]
+    A --> D["Saved sessions and history pruning"]
+    A --> E["Stronger language-specific review"]
+    A --> F["Monaco editor integration"]
+    A --> G["Test coverage"]
+    A --> H["Optional deployed backend"]
 ```
+
+## Bottom Line
+
+LeetMentor is not trying to be a generic chatbot wrapped around LeetCode.
+
+It is trying to be a better practice environment:
+
+- one place to think
+- one place to code
+- one place to ask for help
+- one place to build actual problem-solving skill
