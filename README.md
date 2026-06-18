@@ -2,6 +2,10 @@
 
 LeetMentor is a local LeetCode practice workspace built for guided learning, not answer vending.
 
+Live website:
+
+- [https://leetmentor-1ya8.onrender.com](https://leetmentor-1ya8.onrender.com)
+
 Instead of copying a problem into a chatbot, waiting for a long reply, and pasting code back into LeetCode, the product keeps the full study loop in one place:
 
 - load a problem
@@ -347,6 +351,10 @@ GROQ_API_KEY
 ```
 
 4. Deploy.
+
+Current live deployment:
+
+- [https://leetmentor-1ya8.onrender.com](https://leetmentor-1ya8.onrender.com)
 
 The included blueprint creates:
 
