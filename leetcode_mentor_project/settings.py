@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+HAS_DJ_DATABASE_URL = importlib.util.find_spec("dj_database_url") is not None
+HAS_WHITENOISE = importlib.util.find_spec("whitenoise") is not None
+
+if HAS_DJ_DATABASE_URL:
+    import dj_database_url
 
 
 def load_env_file(path: Path) -> None:
@@ -25,13 +32,26 @@ for candidate in (
 ):
     load_env_file(candidate)
 
-
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-secret-key-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
+DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",") if host.strip()]
 for dev_host in ("testserver", "127.0.0.1", "localhost"):
     if dev_host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(dev_host)
+
+render_hostname = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if render_hostname and render_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_hostname)
+
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+if render_hostname:
+    render_origin = f"https://{render_hostname}"
+    if render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(render_origin)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -53,6 +73,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+if HAS_WHITENOISE:
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
+
 ROOT_URLCONF = "leetcode_mentor_project.urls"
 
 TEMPLATES = [
@@ -73,12 +96,22 @@ TEMPLATES = [
 WSGI_APPLICATION = "leetcode_mentor_project.wsgi.application"
 ASGI_APPLICATION = "leetcode_mentor_project.asgi.application"
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+default_database = {
+    "ENGINE": "django.db.backends.sqlite3",
+    "NAME": BASE_DIR / "db.sqlite3",
 }
+
+database_url = os.environ.get("DATABASE_URL", "").strip()
+if database_url and HAS_DJ_DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            database_url,
+            conn_max_age=600,
+            ssl_require=database_url.startswith("postgres://") or database_url.startswith("postgresql://"),
+        )
+    }
+else:
+    DATABASES = {"default": default_database}
 
 AUTH_PASSWORD_VALIDATORS = []
 
@@ -91,4 +124,23 @@ STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+if HAS_WHITENOISE:
+    STORAGES = {
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        }
+    }
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SECURE_SSL_REDIRECT", "true").lower() == "true"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = "DENY"
+    SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "31536000"))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", "true").lower() == "true"
+    SECURE_HSTS_PRELOAD = os.environ.get("DJANGO_SECURE_HSTS_PRELOAD", "true").lower() == "true"

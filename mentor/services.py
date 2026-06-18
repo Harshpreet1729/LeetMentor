@@ -119,7 +119,7 @@ MODE_GUIDANCE = {
     "hint": "Give a progressive hint only. Respect hint level exactly. Make the hint actionable enough for the student to begin writing. Level 1 must include one tiny starter cue line in backticks. Level 3 must describe the solving algorithm, not a dry run. Do not use full code.",
     "explain": "Explain only what the problem is asking. Clarify the goal, the important rules, one small example, and the subtle point students often miss. Do not give the algorithm, the direct solution steps, or code.",
     "debug": "Review the student's actual code. Identify the exact bug, explain why it fails on one concrete case, and show the corrected version in a fenced code block only if needed.",
-    "complexity": "Answer only with the time and space complexity plus a very short reason. Do not explain the full approach, do not give the solution, and do not include code.",
+    "complexity": "State the best target complexity for this exact problem, the likely brute-force worst complexity for this exact problem, and if the student pasted code, also estimate the current code complexity. Keep it short, specific, and complexity-focused only.",
     "dry_run": "Dry run one real sample from the problem. Use the actual values from the example, show the changing state clearly, and explain what each step is doing.",
     "full_solution": "Provide the optimal solution with short intuition, one clean code block, and explicit LaTeX complexity.",
     "optimize": "Compare the current approach with a better one. State old and new complexities in LaTeX and explain the upgrade path without fluff.",
@@ -761,11 +761,11 @@ class AIService:
         if mode == "complexity":
             return "\n".join([
                 "Use this exact section order:",
-                "### Complexity",
-                "### Why",
+                "### Best for this question",
+                "### Worst for this question",
+                "If student code is present, also include `### Your code`.",
                 "Leave one blank line after each heading.",
                 "Keep the whole answer very short.",
-                "If no student code is present, explicitly say you are assuming the standard accepted approach.",
                 "Write every complexity in LaTeX, for example `\\( O(n \\log n) \\)`.",
             ])
         if mode == "optimize":
@@ -806,7 +806,7 @@ class AIService:
         if mode == "debug":
             return "Run the corrected logic on one more edge case."
         if mode == "complexity":
-            return "Compare the brute force and optimized approaches on a small input."
+            return "Compare your code complexity with the target best complexity for this problem."
         return "Ask for a dry run, hint, or code review if you want to go deeper."
 
     def _generate_progressive_hint(self, problem: dict[str, Any] | None, hint_level: int) -> str | None:
@@ -1171,52 +1171,233 @@ class AIService:
         return None
 
     def _generate_complexity_fallback(self, problem: dict[str, Any], code: str) -> str:
-        tags = [tag.lower() for tag in problem.get("tags", [])]
-        has_nested_loops = code.count("for") + code.count("while") >= 2
-        uses_sort = "sort(" in code or ".sort(" in code or "sorted(" in code
-        uses_hash = any(token in code for token in ("unordered_map", "unordered_set", "HashMap", "HashSet", "dict(", "set("))
-        uses_queue = any(token in code for token in ("queue<", "deque<", "queue(", "deque(", "LinkedList<"))
-        if "hash table" in tags or uses_hash:
-            time = r"\( O(n) \)"
-            space = r"\( O(n) \)"
-            better = "This is already the standard optimized approach for this pattern."
-        elif "two pointers" in tags:
-            time = r"\( O(n) \)"
-            space = r"\( O(1) \)"
-            better = "This is usually close to optimal because it avoids extra scans or extra storage."
-        elif "binary search" in tags:
-            time = r"\( O(\log n) \)"
-            space = r"\( O(1) \)"
-            better = "This is the expected target when the search space can be halved each step."
-        elif "dynamic programming" in tags:
-            time = r"\( O(n) \) to \( O(n^2) \), depending on the state transition."
-            space = r"\( O(n) \) unless the state can be compressed."
-            better = "The main improvement is usually state compression or removing repeated transitions."
-        elif "graph" in tags or "breadth-first search" in tags or "depth-first search" in tags or uses_queue:
-            time = r"\( O(V + E) \)"
-            space = r"\( O(V) \)"
-            better = "That is the usual target because each node and edge should be processed only once."
-        elif has_nested_loops:
-            time = r"\( O(n^2) \) in the current form."
-            space = r"\( O(1) \) to \( O(n) \), depending on helper storage."
-            better = "The biggest win is likely replacing the repeated inner scan with a lookup structure."
-        elif uses_sort:
-            time = r"\( O(n \log n) \)"
-            space = r"\( O(1) \) to \( O(n) \), depending on the language and sort implementation."
-            better = "Sorting is often fine, but check whether one-pass lookup can reduce it to linear time."
-        else:
-            time = r"\( O(n) \) to \( O(n \log n) \), depending on the exact operations in the code."
-            space = r"\( O(1) \) to \( O(n) \), depending on the helper storage used."
-            better = "The next improvement usually comes from reducing repeated work with a better data structure."
+        best_time, best_space, best_reason, worst_time, worst_space, worst_reason = self._infer_problem_complexity(problem)
 
-        return "\n".join([
-            "### Complexity",
-            f"- Time: {time}",
-            f"- Space: {space}",
+        sections = [
+            "### Best for this question",
+            f"- Time: {best_time}",
+            f"- Space: {best_space}",
+            f"- Why: {best_reason}",
             "",
-            "### Why",
-            "This comes from the number of passes over the input and the amount of extra storage used.",
-        ])
+            "### Worst for this question",
+            f"- Time: {worst_time}",
+            f"- Space: {worst_space}",
+            f"- Why: {worst_reason}",
+        ]
+
+        if code:
+            code_time, code_space, code_reason = self._infer_code_complexity(code, problem)
+            sections.extend([
+                "",
+                "### Your code",
+                f"- Time: {code_time}",
+                f"- Space: {code_space}",
+                f"- Why: {code_reason}",
+            ])
+
+        return "\n".join(sections)
+
+    def _infer_problem_complexity(self, problem: dict[str, Any]) -> tuple[str, str, str, str, str, str]:
+        tags = {tag.lower() for tag in problem.get("tags", [])}
+        text = f"{problem.get('title', '')} {problem.get('statement', '')}".lower()
+
+        if "clock" in text and "angle" in text:
+            return (
+                r"\( O(1) \)",
+                r"\( O(1) \)",
+                "You can compute both angles directly from the hour and minute values with formulas.",
+                r"\( O(720) \)",
+                r"\( O(1) \)",
+                "A brute-force idea could simulate each minute position across a full clock cycle before comparing angles.",
+            )
+
+        if "binary search" in tags:
+            return (
+                r"\( O(\log n) \)",
+                r"\( O(1) \)",
+                "The target is to discard half of the remaining search space each step.",
+                r"\( O(n) \)",
+                r"\( O(1) \)",
+                "A basic fallback is to scan linearly until the answer is found.",
+            )
+
+        if "hash table" in tags:
+            return (
+                r"\( O(n) \)",
+                r"\( O(n) \)",
+                "One pass with constant-time lookup is usually the accepted target for this pattern.",
+                r"\( O(n^2) \)",
+                r"\( O(1) \)",
+                "The brute-force version usually checks many pairs or repeatedly rescans earlier values.",
+            )
+
+        if "two pointers" in tags:
+            if "sorted" in text or "non-decreasing" in text or "nondecreasing" in text:
+                return (
+                    r"\( O(n) \)",
+                    r"\( O(1) \)",
+                    "Once the order is usable, two pointers usually solve it in one sweep.",
+                    r"\( O(n^2) \)",
+                    r"\( O(1) \)",
+                    "The naive version usually tries many pairs or ranges separately.",
+                )
+            return (
+                r"\( O(n \log n) \)",
+                r"\( O(1) \)",
+                "If sorting is needed first, the common target is sort plus one pointer sweep.",
+                r"\( O(n^2) \)",
+                r"\( O(1) \)",
+                "The brute-force version usually compares many candidate pairs directly.",
+            )
+
+        if "dynamic programming" in tags:
+            if any(token in text for token in ("grid", "matrix", "rows", "columns")):
+                return (
+                    r"\( O(mn) \)",
+                    r"\( O(mn) \) or \( O(n) \)",
+                    "Grid DP usually visits each state once, with optional space compression.",
+                    r"\( O(2^{m+n}) \) to \( O(4^{mn}) \)",
+                    r"\( O(m+n) \) or more",
+                    "A naive recursive search can explode because it recomputes many overlapping states.",
+                )
+            return (
+                r"\( O(n) \) to \( O(n^2) \)",
+                r"\( O(n) \) or less",
+                "The accepted approach normally computes each state once and reuses it.",
+                r"\( O(2^n) \)",
+                r"\( O(n) \)",
+                "The brute-force recursive version often repeats the same subproblems exponentially many times.",
+            )
+
+        if "graph" in tags or "breadth-first search" in tags or "depth-first search" in tags:
+            return (
+                r"\( O(V + E) \)",
+                r"\( O(V) \)",
+                "The target is to process each vertex and edge only once.",
+                r"\( O(V \cdot (V + E)) \)",
+                r"\( O(V) \)",
+                "A bad approach can restart traversals from too many states and repeat work heavily.",
+            )
+
+        if "tree" in tags or "binary tree" in tags or "binary search tree" in tags:
+            return (
+                r"\( O(n) \)",
+                r"\( O(h) \)",
+                "A clean traversal usually visits each node once, with recursion stack or explicit stack height \( h \).",
+                r"\( O(n^2) \)",
+                r"\( O(h) \)",
+                "Repeated subtree recomputation can turn tree problems quadratic.",
+            )
+
+        if "math" in tags or "simulation" in tags:
+            return (
+                r"\( O(1) \)",
+                r"\( O(1) \)",
+                "Math or direct-simulation problems often reduce to a formula or a fixed number of operations.",
+                r"\( O(n) \)",
+                r"\( O(1) \)",
+                "The slower version usually simulates step by step instead of using the direct relationship.",
+            )
+
+        if "sliding window" in tags or "string" in tags or "array" in tags:
+            return (
+                r"\( O(n) \)",
+                r"\( O(1) \) to \( O(n) \)",
+                "The standard target is usually one pass with a small amount of tracked state.",
+                r"\( O(n^2) \)",
+                r"\( O(1) \)",
+                "The brute-force version often checks every subarray, substring, or pair separately.",
+            )
+
+        return (
+            r"\( O(n) \) to \( O(n \log n) \)",
+            r"\( O(1) \) to \( O(n) \)",
+            "Most accepted approaches avoid repeated rescans and keep the main work close to one pass or one sort.",
+            r"\( O(n^2) \)",
+            r"\( O(1) \) to \( O(n) \)",
+            "The slower version usually repeats work across many pairs, ranges, or states.",
+        )
+
+    def _infer_code_complexity(self, code: str, problem: dict[str, Any]) -> tuple[str, str, str]:
+        lowered = code.lower()
+        tags = {tag.lower() for tag in problem.get("tags", [])}
+
+        uses_sort = any(token in lowered for token in ("sort(", ".sort(", "sorted("))
+        uses_hash = any(token in lowered for token in ("unordered_map", "unordered_set", "hashmap", "hashset", "dict(", "set("))
+        uses_queue = any(token in lowered for token in ("queue<", "deque<", "queue(", "deque(", "linkedlist<"))
+        uses_stack = any(token in lowered for token in ("stack<", "stack(", ".append(", ".pop("))
+        uses_recursion = self._looks_recursive(lowered)
+        nested_loops = self._has_nested_loops(code)
+        loop_count = len(re.findall(r"\bfor\b|\bwhile\b", lowered))
+        binary_search_shape = "mid" in lowered and any(token in lowered for token in ("left", "right", "low", "high"))
+
+        if "graph" in tags or uses_queue:
+            return (
+                r"\( O(V + E) \)",
+                r"\( O(V) \)",
+                "This looks like traversal-style code where each state is processed through a visited structure or queue once.",
+            )
+
+        if binary_search_shape:
+            return (
+                r"\( O(\log n) \)",
+                r"\( O(1) \)",
+                "The code shape suggests binary search because it keeps bounds and a middle index.",
+            )
+
+        if nested_loops:
+            space = r"\( O(n) \)" if (uses_hash or uses_stack or uses_queue) else r"\( O(1) \)"
+            reason = "There are nested loop patterns, so the main work grows roughly with pairwise comparisons."
+            if uses_hash:
+                reason += " Extra storage is also used for lookup state."
+            return (r"\( O(n^2) \)", space, reason)
+
+        if uses_sort:
+            space = r"\( O(n) \)" if (uses_hash or uses_stack or uses_queue) else r"\( O(1) \) to \( O(n) \)"
+            return (
+                r"\( O(n \log n) \)",
+                space,
+                "The dominant step appears to be sorting, then processing the result with simpler scans.",
+            )
+
+        if loop_count >= 1 and uses_hash:
+            return (
+                r"\( O(n) \)",
+                r"\( O(n) \)",
+                "The code looks like a one-pass scan with hash-based lookup or storage.",
+            )
+
+        if loop_count >= 1:
+            space = r"\( O(n) \)" if (uses_stack or uses_queue or uses_recursion) else r"\( O(1) \)"
+            reason = "The code mainly looks like a single pass over the data."
+            if uses_recursion:
+                reason += " Recursion or an explicit stack adds extra call/state storage."
+            return (r"\( O(n) \)", space, reason)
+
+        if uses_recursion:
+            return (
+                r"\( O(n) \)",
+                r"\( O(n) \)",
+                "The work looks recursive without a heavy loop body, so the main extra cost is the call stack.",
+            )
+
+        return (
+            r"\( O(1) \)",
+            r"\( O(1) \)",
+            "The code looks formula-based or fixed-work rather than input-length driven.",
+        )
+
+    def _has_nested_loops(self, code: str) -> bool:
+        c_style = re.search(r"\b(for|while)\b[\s\S]{0,220}\{[\s\S]{0,220}\b(for|while)\b", code)
+        python_style = re.search(r"(?m)^\s*(for|while)\b[\s\S]{0,220}\n[ \t]{2,}(for|while)\b", code)
+        return bool(c_style or python_style)
+
+    def _looks_recursive(self, lowered_code: str) -> bool:
+        function_names = re.findall(r"\b(?:def|function|int|long long|double|bool|void|string|list|vector<[^>]+>|public|private|static)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(", lowered_code)
+        for name in function_names:
+            if lowered_code.count(f"{name}(") >= 2:
+                return True
+        return False
 
     def _generate_debug_fallback(self, problem: dict[str, Any], code: str, language: str) -> str:
         if not code:

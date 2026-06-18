@@ -324,6 +324,66 @@ flowchart LR
     A --> H["Optional deployed backend"]
 ```
 
+## Deploying The Django App
+
+The easiest first deployment target is the Django dashboard.
+
+This repository is now set up for production-style deployment with:
+
+- `gunicorn` as the app server
+- `whitenoise` for static file serving
+- optional `DATABASE_URL` support for PostgreSQL
+- a `build.sh` build script
+- a `render.yaml` blueprint for Render
+
+### Recommended first path: Render
+
+1. Push the repository to GitHub.
+2. In Render, create a new Blueprint from the repository.
+3. Add the missing secret:
+
+```text
+GROQ_API_KEY
+```
+
+4. Deploy.
+
+The included blueprint creates:
+
+- one Python web service
+- one PostgreSQL database
+
+### Important production environment variables
+
+Set these in the hosting dashboard, not in source control:
+
+```env
+DJANGO_DEBUG=false
+DJANGO_SECRET_KEY=generate_a_new_production_secret
+GROQ_API_KEY=your_real_groq_key
+AI_MODEL=llama-3.3-70b-versatile
+```
+
+`DATABASE_URL` is supplied automatically by Render when you use the included `render.yaml`.
+
+### Manual deploy commands
+
+Build command:
+
+```bash
+./build.sh
+```
+
+Start command:
+
+```bash
+gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT
+```
+
+### Extension note
+
+The Chrome extension backend is separate from the Django dashboard. You can deploy the Django app first and deploy the Node extension API later as a second service if you want the full extension setup online too.
+
 ## Bottom Line
 
 LeetMentor is not meant to be a generic chatbot wrapped around LeetCode. It is meant to be a practice environment where you can think, code, ask for targeted help, and build actual problem-solving skill without leaving the workflow.

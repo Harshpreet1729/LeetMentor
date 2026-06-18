@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: leetmentor-web
+    env: python
+    buildCommand: ./build.sh
+    startCommand: gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leetmentor-db
+          property: connectionString
+      - key: GROQ_API_KEY
+        sync: false
+      - key: AI_MODEL
+        value: llama-3.3-70b-versatile
+
+databases:
+  - name: leetmentor-db

@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}LeetMentor{% endblock %}</title>
     <meta name="csrf-token" content="{{ csrf_token }}" />
+    <link rel="icon" type="image/svg+xml" href="{% static 'brand/leetmentor-mark.svg' %}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
@@ -27,7 +28,9 @@
       <header class="site-header">
         <div class="site-header__inner">
           <a href="/" class="brand" aria-label="LeetMentor home">
-            <span class="brand__mark">&lt;/&gt;</span>
+            <span class="brand__mark">
+              <img src="{% static 'brand/leetmentor-mark.svg' %}" alt="" />
+            </span>
             <span class="brand__text">
               <strong>LeetMentor</strong>
               <small>AI coding assistant</small>
