@@ -27,19 +27,6 @@ The core assistant can:
 - compare approaches
 - provide a full solution when you explicitly want one
 
-## Product Thesis
-
-Most AI-assisted coding flows remove the exact friction that helps people learn.
-
-That sounds convenient, but it often trains the wrong behavior:
-
-- ask too early
-- read passively
-- trust the answer before testing your own reasoning
-- optimize for completion instead of understanding
-
-LeetMentor is based on a different idea: the tool should support the student's reasoning, not replace it.
-
 ## Learning Model
 
 The product is designed around four learning principles:
@@ -135,44 +122,12 @@ The ideal hint system is progressive:
 - level 2 should guide the decision flow
 - level 3 should describe the solving algorithm without dumping full code
 
-### Explain
+### Explain, Review, and Full Solution
 
-Use explain mode when the statement itself is the blocker.
-
-This is for:
-
-- understanding the real goal
-- clarifying rules
-- unpacking tricky wording
-- reading a smaller example in plain language
-
-### Review My Code
-
-Use review mode after you have an honest attempt.
-
-This is the highest-leverage mode for learning because it forces the assistant to work on your reasoning instead of replacing it.
-
-### Complexity
-
-Use complexity mode when your logic works but you want to know whether it is strong enough for interviews or large inputs.
-
-### Optimize
-
-Use optimize mode when you want to improve the accepted version into a cleaner or more efficient one.
-
-### Dry Run
-
-Use dry run mode when you know the broad idea but lose track of state changes, pointer moves, or transitions.
-
-### Full Solution
-
-Use the full solution last, not first.
-
-It is most useful when:
-
-- you already tried
-- you want to compare structure
-- you want to confirm the standard accepted pattern
+- `Explain` is for understanding the statement, rules, and tricky wording.
+- `Review my code` is the highest-leverage mode because it improves your own reasoning instead of replacing it.
+- `Complexity`, `Optimize`, and `Dry run` help when your idea exists but needs sharpening.
+- `Full solution` is best used last, after you already tried and want a clean reference.
 
 ## System Architecture
 
@@ -346,25 +301,6 @@ flowchart TD
     J --> K["Compare, then rewrite in your own words"]
 ```
 
-## Practical Theory
-
-LeetMentor works best when it behaves like a disciplined mentor:
-
-- it should not rescue too early
-- it should not confuse verbosity with usefulness
-- it should push the student back into active reasoning
-- it should make code review and reflection easier than blind copying
-
-The product becomes valuable when the student repeatedly experiences this loop:
-
-1. form an idea
-2. test it in code
-3. notice the gap
-4. ask for a targeted nudge
-5. revise the mental model
-
-That loop is where interview skill is actually built.
-
 ## Current Stack
 
 - Django for the local web app
@@ -390,11 +326,4 @@ flowchart LR
 
 ## Bottom Line
 
-LeetMentor is not trying to be a generic chatbot wrapped around LeetCode.
-
-It is trying to be a better practice environment:
-
-- one place to think
-- one place to code
-- one place to ask for help
-- one place to build actual problem-solving skill
+LeetMentor is not meant to be a generic chatbot wrapped around LeetCode. It is meant to be a practice environment where you can think, code, ask for targeted help, and build actual problem-solving skill without leaving the workflow.
