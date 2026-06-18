@@ -43,6 +43,7 @@
     assistantOutput: byId("assistantOutput"),
     nextStep: byId("nextStep"),
     askChatgptBtn: byId("askChatgptBtn"),
+    youtubeSearchBtn: byId("youtubeSearchBtn"),
     clearOutputBtn: byId("clearOutputBtn"),
     modeButtons: Array.from(document.querySelectorAll("[data-mode]"))
   };
@@ -408,6 +409,24 @@
     window.open(chatGptUrl, "_blank", "noopener,noreferrer");
   }
 
+  function openYouTubeWithProblem() {
+    if (!state.problem) {
+      setStatusTone(els.assistantStatus, "error");
+      setText(els.assistantStatus, "Load a problem first so the YouTube search knows what to look for.");
+      return;
+    }
+
+    const searchTitle = state.problem.title ? `leetcode ${state.problem.title} solution` : `leetcode ${state.problem.questionFrontendId} solution`;
+    const youtubeUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchTitle)}`;
+
+    setStatusTone(els.assistantStatus, "success");
+    setText(els.assistantStatus, "YouTube search opened in a new tab.");
+    setText(els.nextStep, "Next step: pick a walkthrough that matches your language and only use it after you try your own idea.");
+    els.nextStep.classList.remove("hidden");
+
+    window.open(youtubeUrl, "_blank", "noopener,noreferrer");
+  }
+
   function getCsrfToken() {
     const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
     if (metaToken && metaToken !== "NOTPROVIDED") {
@@ -439,6 +458,16 @@
         ? `${problem.questionFrontendId}. ${problem.title} · ${problem.difficulty || "Unknown"}${(problem.tags || []).length ? ` · ${(problem.tags || []).slice(0, 3).join(" · ")}` : ""}`
         : "Load a problem to begin a guided practice session."
     );
+    if (problem.title) {
+      setText(
+        els.problemStatement,
+        `Difficulty: ${problem.difficulty || "Unknown"}${tags ? ` - Topics: ${tags}` : ""}`
+      );
+      setText(
+        els.workspaceProblemMeta,
+        `${problem.questionFrontendId}. ${problem.title} - ${problem.difficulty || "Unknown"}${(problem.tags || []).length ? ` - ${(problem.tags || []).slice(0, 3).join(" - ")}` : ""}`
+      );
+    }
     renderProblemExamples(problem.exampleCards, problem.examples);
     renderProblemConstraints(problem.constraints);
     setContextTab("statement");
@@ -494,23 +523,20 @@
     els.editorFilename.textContent = `solution.${languageExtension(els.languageSelect.value)}`;
   }
 
-  function setBusy(isBusy, label) {
+  function setBusy(isBusy) {
     state.loading = isBusy;
     els.modeButtons.forEach((button) => {
       button.disabled = isBusy;
-      if (isBusy && button.getAttribute("data-mode") === state.activeMode) {
-        button.dataset.originalLabel = button.textContent;
-        button.textContent = label;
-      } else if (!isBusy && button.dataset.originalLabel) {
-        button.textContent = button.dataset.originalLabel;
-        delete button.dataset.originalLabel;
-      }
+      button.setAttribute("aria-busy", isBusy && button.getAttribute("data-mode") === state.activeMode ? "true" : "false");
     });
 
     els.loadProblemBtn.disabled = isBusy;
     els.dailyBtn.disabled = isBusy;
     if (els.askChatgptBtn) {
       els.askChatgptBtn.disabled = isBusy;
+    }
+    if (els.youtubeSearchBtn) {
+      els.youtubeSearchBtn.disabled = isBusy;
     }
     updateServerChip(isBusy ? "Working..." : "Server ready", isBusy ? "warning" : "success");
   }
@@ -546,7 +572,7 @@
       return;
     }
 
-    setBusy(true, "Loading...");
+    setBusy(true);
     setStatusTone(els.problemStatus, "loading");
     setText(els.problemStatus, "Loading today's daily challenge...");
 
@@ -559,7 +585,7 @@
       setStatusTone(els.problemStatus, "error");
       setText(els.problemStatus, error.name === "AbortError" ? "Daily problem request timed out." : error.message);
     } finally {
-      setBusy(false, "Working...");
+      setBusy(false);
     }
   }
 
@@ -575,7 +601,7 @@
       return;
     }
 
-    setBusy(true, "Loading...");
+    setBusy(true);
     setStatusTone(els.problemStatus, "loading");
     setText(els.problemStatus, "Looking up problem...");
 
@@ -588,7 +614,7 @@
       setStatusTone(els.problemStatus, "error");
       setText(els.problemStatus, error.name === "AbortError" ? "Problem lookup timed out." : error.message);
     } finally {
-      setBusy(false, "Working...");
+      setBusy(false);
     }
   }
 
@@ -627,7 +653,7 @@
       return;
     }
 
-    setBusy(true, "Thinking...");
+    setBusy(true);
     setStatusTone(els.assistantStatus, "loading");
     setText(els.assistantStatus, "Thinking...");
     els.assistantOutput.innerHTML = '<div class="response-skeleton"><span></span><span></span><span></span></div>';
@@ -664,7 +690,7 @@
           : String(error.message || "The request failed."),
       ].join("\n\n"));
     } finally {
-      setBusy(false, "Thinking...");
+      setBusy(false);
     }
   }
 
@@ -686,6 +712,9 @@
   els.loadProblemBtn.addEventListener("click", loadProblem);
   if (els.askChatgptBtn) {
     els.askChatgptBtn.addEventListener("click", openChatGptWithProblem);
+  }
+  if (els.youtubeSearchBtn) {
+    els.youtubeSearchBtn.addEventListener("click", openYouTubeWithProblem);
   }
   els.clearOutputBtn.addEventListener("click", () => {
     setStatusTone(els.assistantStatus, "neutral");

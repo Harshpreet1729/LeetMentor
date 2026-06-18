@@ -1,0 +1,164 @@
+{
+  "title": "LeetMentor UI Redesign Prompt",
+  "product": {
+    "name": "LeetMentor",
+    "type": "LeetCode learning assistant",
+    "surfaces": [
+      "Django web dashboard",
+      "Chrome extension sidebar"
+    ],
+    "primary_goal": "Help users solve LeetCode problems with hints, explanation, debugging, dry runs, and complexity guidance without encouraging blind copy-paste."
+  },
+  "current_ui_audit": {
+    "strengths": [
+      "The core workflow is clear: load problem, write code, ask mentor.",
+      "The current styling already feels more premium than a plain form app.",
+      "The mentor actions are directly tied to learning outcomes."
+    ],
+    "ui_glitches_and_crash_risks": [
+      {
+        "area": "Extension hint controls",
+        "issue": "The extension exposes 5 hint levels, but the product language and backend guidance are built around 3 meaningful levels. This creates inconsistent behavior and unclear expectations.",
+        "impact": "Users may expect almost-code or full-solution behavior from the hint selector even when the backend does not clearly support that progression."
+      },
+      {
+        "area": "Extension quick actions",
+        "issue": "The button labeled 'Edge Cases' maps to optimize mode instead of a true edge-case review flow.",
+        "impact": "Users can feel the product is unreliable because the label and result do not match."
+      },
+      {
+        "area": "Chat history persistence",
+        "issue": "Long assistant chats are saved to local extension storage without visible limits or pruning.",
+        "impact": "Large histories can silently fail to save, causing confusing state loss or inconsistent reload behavior."
+      },
+      {
+        "area": "Dashboard action hierarchy",
+        "issue": "Primary learning actions and the external 'Ask ChatGPT' escape hatch are presented together with nearly equal weight.",
+        "impact": "This weakens the learning-first positioning and invites context switching at the exact moment users should stay inside the workspace."
+      },
+      {
+        "area": "Dashboard information density",
+        "issue": "Problem metadata, examples, code, hint controls, mentor actions, and output all compete in one long view.",
+        "impact": "Users on laptops or smaller screens will scroll too much and lose context between reading the problem, editing code, and reviewing the response."
+      },
+      {
+        "area": "Mobile and narrow widths",
+        "issue": "The layout stacks correctly but becomes very tall, pushing critical actions and mentor output far apart.",
+        "impact": "The product feels heavier and slower than it is, even if the backend works."
+      },
+      {
+        "area": "Error state clarity",
+        "issue": "Network, timeout, missing API key, and missing code states are mostly rendered as plain text status messages.",
+        "impact": "Failures are technically handled, but they do not feel actionable or visually distinct enough."
+      },
+      {
+        "area": "Extension docked sidebar",
+        "issue": "The sidebar is always a fixed right panel with strong height usage and no explicit compact mode.",
+        "impact": "It can feel overpowering on smaller laptop screens and may visually fight with the LeetCode page itself."
+      }
+    ]
+  },
+  "redesign_direction": {
+    "design_principles": [
+      "Keep the experience learning-first, not answer-first.",
+      "Make the current step obvious at a glance.",
+      "Reduce scroll distance between code, actions, and mentor output.",
+      "Show failures as recoverable states with one clear next action.",
+      "Use one consistent hint ladder everywhere in the product."
+    ],
+    "visual_direction": {
+      "mood": "Focused, modern study workspace with quiet confidence",
+      "style": "Editorial tech workspace rather than generic chatbot panel",
+      "colors": [
+        "Deep graphite background",
+        "Muted slate surfaces",
+        "One strong accent in warm amber or electric green",
+        "Use red only for destructive or hard failure states"
+      ],
+      "typography": [
+        "Use a strong display face for headings",
+        "Use a readable sans serif for UI",
+        "Use a mono face only for code, metadata, and problem IDs"
+      ]
+    }
+  },
+  "recommended_layout": {
+    "web_dashboard": {
+      "top_bar": [
+        "Brand on the left",
+        "Current problem breadcrumb or title in the center-left",
+        "One compact status chip on the right for API/server state"
+      ],
+      "main_grid": [
+        "Left rail: problem loader, problem summary, difficulty, tags, examples toggle",
+        "Center column: code editor as the dominant surface",
+        "Right rail: mentor panel with actions, response, and next-step guidance"
+      ],
+      "behavior": [
+        "Keep the code editor sticky or visually dominant so it remains in view.",
+        "Keep the mentor action cluster above the response so users always know what to do next.",
+        "Collapse long examples and constraints by default, but show a short summary preview.",
+        "Show problem statement preview with 'expand full statement' rather than dumping everything at once."
+      ]
+    },
+    "extension_sidebar": {
+      "header": [
+        "Compact problem title and difficulty pill",
+        "Small collapse button",
+        "Optional compact mode toggle"
+      ],
+      "sections": [
+        "Problem summary card",
+        "Code source card with live/manual toggle",
+        "Mentor quick actions",
+        "Conversation thread",
+        "Prompt composer at the bottom"
+      ],
+      "behavior": [
+        "Shrink non-essential chrome so the conversation area gets more height.",
+        "Keep quick actions visible without forcing the user to scroll to the bottom every time.",
+        "Offer a mini mode that shows only quick actions plus the latest response."
+      ]
+    }
+  },
+  "button_placement": {
+    "web_dashboard": [
+      "Place 'Load problem' directly beside the identifier input.",
+      "Place 'Today' as a secondary action beside or under the loader, not as an equal visual rival to the main load button.",
+      "Place mentor actions in one grouped action bar on the right rail.",
+      "Make 'Hint' the primary button.",
+      "Make 'Explain' and 'Review my code' secondary but still visible.",
+      "Move 'Complexity' and 'Dry run' into a segmented row below the primary actions, not inside a hidden details disclosure.",
+      "Move 'Ask ChatGPT' into a subtle overflow or external-tools section so it does not interrupt the core learning flow.",
+      "Place 'Clear output' inside the response header as a low-emphasis text button."
+    ],
+    "extension_sidebar": [
+      "Place the main CTA at the bottom right as 'Ask Mentor'.",
+      "Keep the top quick actions near the composer, not far above the conversation.",
+      "Rename 'Edge Cases' to a real action such as 'Find Edge Cases' only if the backend supports it; otherwise remove it.",
+      "Replace the floating button text-only label with a more polished icon-plus-tooltip treatment.",
+      "Add a visible collapse or minimize button inside the sidebar header."
+    ]
+  },
+  "interaction_fixes": [
+    "Standardize hint levels to exactly 3 across web, extension, prompt copy, and backend behavior.",
+    "Add explicit empty states for: no problem loaded, no code detected, backend offline, LeetCode fetch failure, missing API key, and request timeout.",
+    "Show a loading skeleton or shimmer for problem details and mentor responses instead of only text updates.",
+    "Add autosave messaging for the dashboard code editor and note field.",
+    "Add response tabs or sections for long outputs: answer, code, complexity, next step.",
+    "Trim or cap saved extension chat history to avoid silent storage failures.",
+    "Preserve the last loaded problem and language on the web dashboard.",
+    "Make the response area easier to scan with section dividers and sticky action context."
+  ],
+  "do_not_do": [
+    "Do not turn the product into a generic chatbot.",
+    "Do not make full solution access feel like the primary path.",
+    "Do not hide important learning actions behind too many accordions.",
+    "Do not overload the first screen with every detail expanded at once."
+  ],
+  "deliverable_request": {
+    "format": "Design system aware UI concept",
+    "ask": "Redesign the LeetMentor web dashboard and extension sidebar using the audit above. Produce a cleaner layout, stronger action hierarchy, better failure states, and clearer button placement. Keep the product focused on guided learning rather than instant answers."
+  },
+  "final_prompt": "Redesign LeetMentor, a LeetCode learning assistant with two surfaces: a Django web dashboard and a Chrome extension sidebar. The product should feel like a focused coding workspace, not a generic chatbot. The primary user flow is: load a problem, read a concise summary, write code, ask for a hint/debug review/complexity check/dry run, and iterate. Solve the following issues in the redesign: the interface is currently too scroll-heavy, problem context and mentor output compete for attention, ChatGPT is visually promoted too early, extension hint levels are inconsistent with backend behavior, some action labels are misleading, error states are too plain, and the extension sidebar can feel too large and heavy. Create a layout where the web dashboard uses a 3-zone workspace: left rail for problem context, center for code editor, right rail for mentor actions and response. Keep the code editor visually dominant. Keep Hint as the primary action. Keep Explain and Review My Code visible. Bring Complexity and Dry Run out of hidden accordions. Move Ask ChatGPT into a low-emphasis external tools area. For the extension, create a more compact assistant with a strong header, a compact problem card, a code-source card, always-reachable quick actions, a scrollable response thread, and a bottom composer. Standardize hint progression to exactly 3 levels across the product. Add explicit empty, loading, offline, timeout, missing-code, and missing-API-key states. Use a premium study-workspace aesthetic: deep graphite backgrounds, restrained surfaces, one clear accent color, expressive typography, mono only for code and metadata, and purposeful spacing. Recommend which buttons belong where, what should be primary vs secondary, and how the layout should adapt on smaller screens. The result should look intentional, modern, and highly usable for students practicing DSA."
+}

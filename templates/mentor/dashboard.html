@@ -10,18 +10,34 @@
 {% block content %}
   <section class="hero">
     <div class="hero__copy">
-      <p class="eyebrow">LeetCode workspace</p>
-      <h1>Solve one problem at a time.</h1>
+      <p class="eyebrow">LeetCode practice desk</p>
+      <h1>Focused prep with just enough help.</h1>
       <p class="hero__body">
-        Load a problem, write your solution, and get focused help for hints, debugging, complexity, and dry runs.
+        Load a problem, write your own attempt, and use the mentor only when you need a hint, a review, or a cleaner next step.
       </p>
-      <p id="workspaceProblemMeta" class="hidden">Load a problem to begin a guided practice session.</p>
+      <p id="workspaceProblemMeta" class="hero__status">Load a problem to begin a guided practice session.</p>
     </div>
-    <div class="hero__meta">
-      <span>Problem lookup</span>
-      <span>Focused editor</span>
-      <span>Structured mentor output</span>
-      <span id="serverStateChip" class="hidden">Server ready</span>
+    <div class="hero__panel">
+      <div class="hero__meta">
+        <span>Problem lookup</span>
+        <span>Focused editor</span>
+        <span>Structured mentor output</span>
+        <span id="serverStateChip">Server ready</span>
+      </div>
+      <div class="hero__checklist" aria-label="Study workflow">
+        <article class="mini-card">
+          <span class="mini-card__label">1. Load</span>
+          <strong>Start with a number, slug, title, or URL.</strong>
+        </article>
+        <article class="mini-card">
+          <span class="mini-card__label">2. Attempt</span>
+          <strong>Write your own code before asking for help.</strong>
+        </article>
+        <article class="mini-card">
+          <span class="mini-card__label">3. Improve</span>
+          <strong>Use hints, debugging, and complexity checks deliberately.</strong>
+        </article>
+      </div>
     </div>
   </section>
 
@@ -77,6 +93,21 @@
           </div>
         </details>
       </article>
+
+      <article class="panel panel--compact">
+        <div class="panel__header">
+          <div>
+            <p class="panel__eyebrow">Study pattern</p>
+            <h2>Use the mentor well</h2>
+          </div>
+        </div>
+        <ul class="guide-list">
+          <li>Try the problem first, even if the first draft is rough.</li>
+          <li>Use `Hint` when you are blocked, not when you are impatient.</li>
+          <li>Use `Review my code` after you have a concrete attempt.</li>
+          <li>Use `Complexity` or `Dry run` before jumping to a full answer elsewhere.</li>
+        </ul>
+      </article>
     </aside>
 
     <div class="workspace-main" id="workspace">
@@ -100,6 +131,7 @@
             </select>
           </div>
         </div>
+        <p class="section-note">Keep your own reasoning in the driver seat. The editor is your workspace; the mentor is the assistant.</p>
 
         <div class="editor-frame">
           <div class="editor-frame__bar">
@@ -113,7 +145,7 @@
           <textarea id="codeInput" class="code-editor" spellcheck="false" placeholder="// Write or paste your solution here"></textarea>
         </div>
 
-        <p id="editorAutosave" class="hidden">Autosave idle</p>
+        <p id="editorAutosave" class="helper-text">Autosave idle</p>
       </article>
 
       <article class="panel panel--split" id="mentor-output">
@@ -125,13 +157,19 @@
             </div>
           </div>
 
-          <div class="action-grid">
+          <div class="action-grid action-grid--primary">
             <button class="button button--mode active" data-mode="hint" type="button">Hint</button>
             <button class="button button--mode" data-mode="explain" type="button">Explain the problem</button>
-            <button class="button button--mode" data-mode="debug" type="button">Review my code</button>
-            <button id="askChatgptBtn" class="button button--mode button--ghost" type="button">Ask ChatGPT</button>
+            <button class="button button--mode button--wide" data-mode="debug" type="button">Review my code</button>
           </div>
-          <p class="action-note">Hints are progressive now: start, direction, then algorithm flow. Use advanced actions only when you want a tighter complexity check or a real dry run.</p>
+          <div class="action-external">
+            <p class="action-subtitle">External tools</p>
+            <div class="action-grid action-grid--external">
+              <button id="askChatgptBtn" class="button button--mode button--ghost" type="button">Ask ChatGPT</button>
+              <button id="youtubeSearchBtn" class="button button--mode button--ghost" type="button">YouTube solution</button>
+            </div>
+          </div>
+          <p class="action-note">Hints now move from a real starting push, to approach direction, to the actual solving flow. Use advanced actions only when you want a tighter complexity check or a real dry run.</p>
 
           <details class="detail-toggle detail-toggle--compact">
             <summary>Advanced actions</summary>
@@ -153,7 +191,10 @@
 
           <p id="assistantStatus" class="status-text" role="status">Load a problem, then choose one action.</p>
           <article id="assistantOutput" class="response-box response-box--formatted">
-            <p>Your explanation, hint, code review, or dry run will appear here.</p>
+            <div class="empty-state">
+              <strong>Mentor output will appear here.</strong>
+              <p>Start by loading a problem, then choose one focused action such as a hint, explanation, or code review.</p>
+            </div>
           </article>
           <p id="nextStep" class="next-step hidden"></p>
         </div>

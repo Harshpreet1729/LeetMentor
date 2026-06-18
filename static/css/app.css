@@ -1,19 +1,33 @@
 :root {
-  --bg: #090a0c;
-  --surface: rgba(22, 24, 29, 0.9);
-  --surface-raised: #1a1d22;
-  --text: #f3f4f6;
-  --muted: #969ca6;
-  --border: rgba(255, 255, 255, 0.1);
-  --accent: #ffffff;
-  --accent-hover: #ebedf0;
-  --danger: #ef4444;
-  --success: #22c55e;
-  --shadow: 0 22px 48px rgba(0, 0, 0, 0.28);
-  --radius-lg: 20px;
+  --bg: #101315;
+  --surface: #171c1f;
+  --surface-raised: #1d2327;
+  --surface-strong: #232b30;
+  --surface-inset: #0d1012;
+  --text: #f3f5f4;
+  --text-secondary: #c2cbc6;
+  --muted: #90a09a;
+  --muted-soft: #6f7c78;
+  --border: rgba(200, 220, 212, 0.12);
+  --border-strong: rgba(200, 220, 212, 0.22);
+  --accent: #8fd3c1;
+  --accent-strong: #b4eadb;
+  --accent-ink: #09241c;
+  --warning: #e5b372;
+  --danger: #df7d7d;
+  --success: #8dd0a3;
+  --shadow: none;
+  --radius-lg: 18px;
   --radius-md: 14px;
   --radius-sm: 10px;
   --container: 1240px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
 }
 
 * {
@@ -29,9 +43,9 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 20% 0%, rgba(255, 122, 23, 0.12), transparent 24%),
-    radial-gradient(circle at 85% 8%, rgba(124, 58, 237, 0.12), transparent 18%),
-    radial-gradient(circle at 50% 100%, rgba(160, 195, 236, 0.08), transparent 22%),
+    radial-gradient(circle at 18% 0%, rgba(143, 211, 193, 0.08), transparent 24%),
+    radial-gradient(circle at 85% 8%, rgba(229, 179, 114, 0.06), transparent 18%),
+    radial-gradient(circle at 50% 100%, rgba(143, 211, 193, 0.04), transparent 22%),
     var(--bg);
   color: var(--text);
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
@@ -61,7 +75,7 @@ textarea {
   top: 0;
   z-index: 30;
   border-bottom: 1px solid var(--border);
-  background: rgba(10, 10, 12, 0.82);
+  background: rgba(16, 19, 21, 0.88);
   backdrop-filter: blur(12px);
 }
 
@@ -77,7 +91,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  min-height: 4.5rem;
+  min-height: 4.75rem;
 }
 
 .brand {
@@ -92,10 +106,10 @@ textarea {
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #ffffff;
+  border-radius: 16px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--accent-strong);
   font-weight: 700;
 }
 
@@ -112,7 +126,7 @@ textarea {
   color: var(--muted);
   font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
@@ -123,7 +137,7 @@ textarea {
 }
 
 .site-nav a {
-  padding: 0.7rem 0.95rem;
+  padding: 0.65rem 0.95rem;
   border-radius: 999px;
   color: var(--muted);
   border: 1px solid transparent;
@@ -133,8 +147,8 @@ textarea {
 .site-nav a:hover,
 .site-nav a:focus-visible {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--surface-raised);
+  border-color: var(--border);
   outline: none;
 }
 
@@ -148,7 +162,7 @@ textarea {
   gap: 0.3rem;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-raised);
   color: var(--text);
 }
 
@@ -174,7 +188,7 @@ textarea {
   padding: 1rem 1.125rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-raised);
 }
 
 .message--error {
@@ -188,7 +202,7 @@ textarea {
 .site-footer {
   padding: 0 0 2rem;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
 }
 
 @keyframes page-enter {
@@ -215,7 +229,7 @@ textarea {
     padding: 0.75rem;
     border: 1px solid var(--border);
     border-radius: 1rem;
-    background: rgba(18, 20, 24, 0.98);
+    background: rgba(23, 28, 31, 0.98);
     box-shadow: var(--shadow);
     opacity: 0;
     pointer-events: none;
