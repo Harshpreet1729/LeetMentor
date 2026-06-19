@@ -23,6 +23,11 @@ def home(request: HttpRequest):
 
 
 @require_GET
+def health_check(_request: HttpRequest) -> JsonResponse:
+    return JsonResponse({"ok": True, "status": "ready"})
+
+
+@require_GET
 def daily_problem(request: HttpRequest) -> JsonResponse:
     try:
         problem = leetcode_service.get_daily_challenge()

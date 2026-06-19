@@ -3,8 +3,14 @@
     problem: null,
     activeMode: "hint",
     loading: false,
-    autosaveTimer: null
+    autosaveTimer: null,
+    serverWakePromise: null,
+    lastHiddenAt: 0,
+    lastWakeCheckAt: 0
   };
+  const SERVER_WAKE_TIMEOUT_MS = 90000;
+  const SERVER_WAKE_RETRY_DELAY_MS = 3000;
+  const SERVER_IDLE_THRESHOLD_MS = 4 * 60 * 1000;
   const storageKeys = {
     code: "leetmentor.code",
     note: "leetmentor.note",
@@ -72,6 +78,12 @@
     if (tone) {
       els.serverStateChip.classList.add(`topbar-chip--${tone}`);
     }
+  }
+
+  function delay(ms) {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
   }
 
   function setContextTab(tabName) {
@@ -538,7 +550,19 @@
     if (els.youtubeSearchBtn) {
       els.youtubeSearchBtn.disabled = isBusy;
     }
-    updateServerChip(isBusy ? "Working..." : "Server ready", isBusy ? "warning" : "success");
+    if (isBusy) {
+      updateServerChip("Working...", "warning");
+    } else if (!els.serverStateChip.classList.contains("topbar-chip--error")) {
+      updateServerChip("Server ready", "success");
+    }
+  }
+
+  function createRequestError(message, statusCode) {
+    const error = new Error(message || "Request failed.");
+    if (typeof statusCode === "number") {
+      error.statusCode = statusCode;
+    }
+    return error;
   }
 
   async function fetchJson(url, options, timeoutMs = 25000) {
@@ -554,17 +578,113 @@
         data = await response.json();
       } else {
         const text = await response.text();
-        throw new Error(text.startsWith("<!DOCTYPE") ? "The server returned an HTML error page instead of JSON." : text || "Request failed.");
+        throw createRequestError(
+          text.startsWith("<!DOCTYPE") ? "The server is waking up. Retrying shortly..." : text || "Request failed.",
+          response.status
+        );
       }
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.message || "Request failed.");
+        throw createRequestError(data.message || "Request failed.", response.status);
       }
 
       return data;
     } finally {
       window.clearTimeout(timer);
     }
+  }
+
+  function isRecoverableWakeError(error) {
+    if (!error) {
+      return false;
+    }
+
+    if (error.name === "AbortError") {
+      return true;
+    }
+
+    if (typeof error.statusCode === "number" && error.statusCode >= 500) {
+      return true;
+    }
+
+    const message = String(error.message || "").toLowerCase();
+    return [
+      "waking up",
+      "failed to fetch",
+      "request failed",
+      "timed out",
+      "html error page",
+      "service unavailable",
+      "bad gateway",
+      "gateway timeout"
+    ].some((snippet) => message.includes(snippet));
+  }
+
+  async function waitForServerWake() {
+    if (state.serverWakePromise) {
+      return state.serverWakePromise;
+    }
+
+    state.serverWakePromise = (async () => {
+      const startedAt = Date.now();
+      updateServerChip("Waking server...", "warning");
+
+      while (Date.now() - startedAt < SERVER_WAKE_TIMEOUT_MS) {
+        try {
+          await fetchJson("/api/health/", undefined, 12000);
+          updateServerChip("Server ready", "success");
+          state.lastWakeCheckAt = Date.now();
+          return true;
+        } catch (error) {
+          updateServerChip("Still waking...", "warning");
+          await delay(SERVER_WAKE_RETRY_DELAY_MS);
+        }
+      }
+
+      updateServerChip("Server unreachable", "error");
+      throw new Error("The server is still waking up. Please wait a few seconds and try again.");
+    })();
+
+    try {
+      return await state.serverWakePromise;
+    } finally {
+      state.serverWakePromise = null;
+    }
+  }
+
+  async function runWithWakeRetry(task, handlers = {}) {
+    try {
+      return await task();
+    } catch (error) {
+      if (!isRecoverableWakeError(error)) {
+        throw error;
+      }
+
+      if (typeof handlers.onWakeStart === "function") {
+        handlers.onWakeStart(error);
+      }
+
+      await waitForServerWake();
+
+      if (typeof handlers.onRetry === "function") {
+        handlers.onRetry();
+      }
+
+      return task();
+    }
+  }
+
+  function warmServerInBackground() {
+    const now = Date.now();
+    if (state.loading || state.serverWakePromise || now - state.lastWakeCheckAt < 30000) {
+      return;
+    }
+
+    state.lastWakeCheckAt = now;
+    updateServerChip("Checking server...", "warning");
+    waitForServerWake().catch(() => {
+      updateServerChip("Wake check failed", "error");
+    });
   }
 
   async function loadDaily() {
@@ -577,7 +697,18 @@
     setText(els.problemStatus, "Loading today's daily challenge...");
 
     try {
-      const data = await fetchJson("/api/daily/");
+      const data = await runWithWakeRetry(
+        () => fetchJson("/api/daily/"),
+        {
+          onWakeStart: () => {
+            setStatusTone(els.problemStatus, "loading");
+            setText(els.problemStatus, "Server was asleep. Waking it up and retrying daily challenge...");
+          },
+          onRetry: () => {
+            setText(els.problemStatus, "Server is awake. Retrying daily challenge...");
+          }
+        }
+      );
       setProblem(data.problem);
       setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Daily challenge loaded.");
@@ -606,7 +737,18 @@
     setText(els.problemStatus, "Looking up problem...");
 
     try {
-      const data = await fetchJson(`/api/problem/?identifier=${encodeURIComponent(identifier)}`);
+      const data = await runWithWakeRetry(
+        () => fetchJson(`/api/problem/?identifier=${encodeURIComponent(identifier)}`),
+        {
+          onWakeStart: () => {
+            setStatusTone(els.problemStatus, "loading");
+            setText(els.problemStatus, "Server was asleep. Waking it up and retrying lookup...");
+          },
+          onRetry: () => {
+            setText(els.problemStatus, "Server is awake. Retrying lookup...");
+          }
+        }
+      );
       setProblem(data.problem);
       setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Problem loaded.");
@@ -660,17 +802,28 @@
     els.nextStep.classList.add("hidden");
 
     try {
-      const data = await fetchJson(
-        "/api/assistant/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": getCsrfToken()
+      const data = await runWithWakeRetry(
+        () => fetchJson(
+          "/api/assistant/",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": getCsrfToken()
+            },
+            body: JSON.stringify(payload)
           },
-          body: JSON.stringify(payload)
-        },
-        30000
+          30000
+        ),
+        {
+          onWakeStart: () => {
+            setStatusTone(els.assistantStatus, "loading");
+            setText(els.assistantStatus, "Server was asleep. Waking it up and retrying your request...");
+          },
+          onRetry: () => {
+            setText(els.assistantStatus, "Server is awake. Retrying your request...");
+          }
+        }
       );
 
       renderAssistantOutput(data.answer);
@@ -740,6 +893,23 @@
   if (els.questionInput) {
     els.questionInput.addEventListener("input", () => queueAutosave("note"));
   }
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      state.lastHiddenAt = Date.now();
+      return;
+    }
+
+    const wasHiddenLongEnough = state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS;
+    state.lastHiddenAt = 0;
+    if (wasHiddenLongEnough) {
+      warmServerInBackground();
+    }
+  });
+  window.addEventListener("focus", () => {
+    if (state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS) {
+      warmServerInBackground();
+    }
+  });
 
   setActiveMode("hint");
   setContextTab("statement");
