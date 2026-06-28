@@ -1,226 +1,258 @@
-# LeetMentor
+<p align="center">
+  <img src="static/brand/leetmentor-mark.svg" alt="LeetMentor logo" width="72" />
+</p>
 
-LeetMentor is a local LeetCode practice workspace built for guided learning, not answer vending.
+<h1 align="center">LeetMentor</h1>
 
-Live website:
+<p align="center">
+  Guided LeetCode practice for people who want to learn the pattern, not just copy the answer.
+</p>
 
-- [https://leetmentor-1ya8.onrender.com](https://leetmentor-1ya8.onrender.com)
+<p align="center">
+  <a href="https://leetmentor-1ya8.onrender.com">Live demo</a> |
+  <a href="#architecture">Architecture</a> |
+  <a href="#data-flow">Data Flow</a> |
+  <a href="#local-setup">Local Setup</a>
+</p>
 
-Instead of copying a problem into a chatbot, waiting for a long reply, and pasting code back into LeetCode, the product keeps the full study loop in one place:
+<p align="center">
+  <img alt="Django" src="https://img.shields.io/badge/Django-Web%20workspace-113228?style=for-the-badge" />
+  <img alt="React" src="https://img.shields.io/badge/React-Extension%20UI-0F172A?style=for-the-badge" />
+  <img alt="Express" src="https://img.shields.io/badge/Express-Extension%20API-111827?style=for-the-badge" />
+  <img alt="Groq" src="https://img.shields.io/badge/Groq-AI%20responses-0B3B2E?style=for-the-badge" />
+</p>
 
-- load a problem
-- think first
+## Overview
+
+LeetMentor keeps the full problem-solving loop in one workspace:
+
+- load a LeetCode problem
+- think before asking for help
 - write your own attempt
-- ask for the smallest useful kind of help
-- iterate until you understand the pattern
+- request the smallest useful intervention
+- revise until the pattern clicks
 
-## What It Is
+It currently ships in two surfaces that share the same teaching philosophy:
 
-LeetMentor currently has two surfaces:
+| Surface | Best for | Main stack |
+| --- | --- | --- |
+| Web dashboard | Full-screen study sessions with problem, code, and mentor output side by side | Django, HTML, CSS, JS |
+| Chrome extension | In-context practice directly on the LeetCode page | React, TypeScript, Express |
 
-- a Django web dashboard for a full-screen coding workspace
-- a Chrome extension sidebar for in-context practice on the LeetCode page
-
-The core assistant can:
-
-- explain a problem in simpler terms
-- give progressive hints
-- review your code
-- discuss complexity
-- run through samples
-- compare approaches
-- provide a full solution when you explicitly want one
-
-## Learning Model
-
-The product is designed around four learning principles:
-
-1. Productive struggle matters.
-   A small amount of difficulty is useful because it forces pattern recognition, recall, and decision-making.
-
-2. Help should be progressive.
-   A directional nudge is better than a complete answer when the student is still capable of solving the problem.
-
-3. Review beats replacement.
-   Debugging your own attempt teaches more than reading a fresh solution from scratch.
-
-4. Full solutions should come late.
-   The clean solution is most valuable after the student has already formed and tested a mental model.
-
-## Why It Exists
+## Why This Exists
 
 ```mermaid
 flowchart LR
-    subgraph A["Typical copy-paste AI loop"]
+    subgraph Old["Typical copy-paste AI loop"]
         A1["Open LeetCode"]
-        A2["Copy the full problem"]
+        A2["Copy the full prompt"]
         A3["Paste into chatbot"]
-        A4["Paste your code"]
-        A5["Read a long answer"]
-        A6["Copy the final code back"]
-        A1 --> A2 --> A3 --> A4 --> A5 --> A6
+        A4["Read a big answer"]
+        A5["Paste code back"]
+        A1 --> A2 --> A3 --> A4 --> A5
     end
 
-    subgraph B["LeetMentor learning loop"]
-        B1["Load problem locally"]
-        B2["Write your own attempt"]
-        B3["Ask for the exact kind of help you need"]
-        B4["Revise, test, and understand"]
-        B5["Submit with clearer reasoning"]
+    subgraph New["LeetMentor learning loop"]
+        B1["Load problem"]
+        B2["Think first"]
+        B3["Write attempt"]
+        B4["Ask for targeted help"]
+        B5["Refine and submit"]
         B1 --> B2 --> B3 --> B4 --> B5
     end
+
+    classDef old fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1px;
+    classDef mentor fill:#0f3d2e,stroke:#34d399,color:#ecfdf5,stroke-width:1px;
+    class A1,A2,A3,A4,A5 old;
+    class B1,B2,B3,B4,B5 mentor;
 ```
 
-The difference is not only convenience. It changes the user's behavior:
+The point is not just convenience. The product is trying to preserve productive struggle, reduce context switching, and make hints feel like coaching instead of answer vending.
 
-- less tab switching
-- less context loss
-- less temptation to jump straight to the final code
-- more repetition of the actual interview skill loop
+## Experience Model
 
-## Core Study Loop
+### Mentor Actions
+
+| Action | When to use it | What it should do |
+| --- | --- | --- |
+| `Hint` | You are blocked but still want to solve it yourself | Nudge the next move without dumping code |
+| `Explain` | The statement or constraints are unclear | Rephrase the task in simpler words |
+| `Review my code` | You already wrote an attempt | Find the exact bug or reasoning mistake |
+| `Complexity` | Your code works, but you doubt the efficiency | Compare current vs target complexity |
+| `Optimize` | You want the better pattern | Explain the upgrade path |
+| `Dry run` | You need to see state changes on real input | Walk through one example clearly |
+| `Full solution` | You already tried and now want a clean reference | Show the optimal approach last |
+
+### Study Loop
 
 ```mermaid
 flowchart TD
     A["Load problem"] --> B["Read goal, examples, constraints"]
     B --> C["Think before asking"]
     C --> D["Write first attempt"]
-    D --> E{"What do you need next?"}
-    E -->|"Need a start"| F["Hint"]
+    D --> E{"What help do I need?"}
+    E -->|"Need a nudge"| F["Hint"]
     E -->|"Need clarity"| G["Explain"]
-    E -->|"Code is failing"| H["Review my code"]
-    E -->|"Code works but may be slow"| I["Complexity / Optimize"]
-    E -->|"Need a final reference"| J["Full solution"]
-    F --> K["Update your approach"]
+    E -->|"My code fails"| H["Review my code"]
+    E -->|"I need speed"| I["Complexity / Optimize"]
+    E -->|"Need a reference"| J["Full solution"]
+    F --> K["Revise approach"]
     G --> K
     H --> K
     I --> K
     K --> D
-    J --> L["Compare with your own version"]
-    L --> M["Submit and reflect"]
-    D --> M
+    J --> L["Compare, then rewrite in your own words"]
+
+    classDef step fill:#0f172a,stroke:#334155,color:#f8fafc;
+    classDef choice fill:#3b2f0c,stroke:#f59e0b,color:#fef3c7;
+    classDef action fill:#082f49,stroke:#38bdf8,color:#e0f2fe;
+    class A,B,C,D,K,L step;
+    class E choice;
+    class F,G,H,I,J action;
 ```
 
-## Mentor Actions Explained
+## Architecture
 
-Each action exists for a different stage of the learning process.
+LeetMentor is one product with two delivery surfaces:
 
-```mermaid
-flowchart LR
-    A["Blocked before coding"] --> B["Hint"]
-    C["Confused about what the statement means"] --> D["Explain"]
-    E["Have code, but it fails"] --> F["Review my code"]
-    G["Have code, but unsure about efficiency"] --> H["Complexity"]
-    I["Accepted but want a stronger approach"] --> J["Optimize"]
-    K["Want to understand sample transitions"] --> L["Dry run"]
-    M["Need a final reference after trying"] --> N["Full solution"]
-```
-
-### Hint
-
-Use hint mode when you still want to solve the problem yourself.
-
-The ideal hint system is progressive:
-
-- level 1 should help you start
-- level 2 should guide the decision flow
-- level 3 should describe the solving algorithm without dumping full code
-
-### Explain, Review, and Full Solution
-
-- `Explain` is for understanding the statement, rules, and tricky wording.
-- `Review my code` is the highest-leverage mode because it improves your own reasoning instead of replacing it.
-- `Complexity`, `Optimize`, and `Dry run` help when your idea exists but needs sharpening.
-- `Full solution` is best used last, after you already tried and want a clean reference.
-
-## System Architecture
+- the Django app is the standalone study dashboard
+- the extension stack is a React sidebar plus a local Express API
+- both surfaces fetch LeetCode problem data and generate mentor responses
 
 ```mermaid
 flowchart TB
-    U["User"] --> W["Django web dashboard"]
-    U --> X["Chrome extension sidebar"]
+    U["User"]
 
-    W --> M["Mentor service (Django)"]
-    X --> S["Express assistant server"]
+    subgraph Surface["User-facing surfaces"]
+        W["Django dashboard"]
+        X["Chrome extension sidebar"]
+    end
 
-    M --> L["LeetCode GraphQL / problem data"]
+    subgraph Services["Application services"]
+        M["mentor/views.py + mentor/services.py"]
+        S["apps/server/src/index.ts"]
+        P["packages/shared<br/>types + constants"]
+    end
+
+    subgraph External["External providers"]
+        L["LeetCode GraphQL + problem index"]
+        G["Groq Chat Completions API"]
+    end
+
+    U --> W
+    U --> X
+
+    W --> M
+    X --> S
+    X -. shares contracts .-> P
+    S -. shares contracts .-> P
+
+    M --> L
+    M --> G
     S --> L
-
-    M --> G["Groq API"]
     S --> G
 
-    X --> P["Shared package: types, constants, API contract"]
-    S --> P
+    classDef surface fill:#0f172a,stroke:#64748b,color:#f8fafc;
+    classDef service fill:#0f3d2e,stroke:#34d399,color:#ecfdf5;
+    classDef external fill:#3f1d2e,stroke:#fb7185,color:#fff1f2;
+    class U,W,X surface;
+    class M,S,P service;
+    class L,G external;
 ```
 
-## Request Lifecycle
+## Data Flow
+
+### Web Dashboard Request Flow
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant UI as Workspace
-    participant LC as LeetCode data layer
-    participant AI as Mentor model
+    participant User
+    participant Web as Django dashboard
+    participant Views as mentor/views.py
+    participant Service as mentor/services.py
+    participant LC as LeetCode
+    participant AI as Groq
 
-    U->>UI: Load problem
-    UI->>LC: Resolve number, slug, title, or URL
-    LC-->>UI: Statement, examples, constraints, tags
-    U->>UI: Write code and choose an action
-    UI->>AI: Send mode + problem context + optional code
-    AI-->>UI: Structured answer
-    UI-->>U: Render hint, explanation, review, or complexity output
+    User->>Web: Load problem / choose mentor action
+    Web->>Views: /api/problem or /api/assistant
+    Views->>Service: Resolve problem or generate response
+    Service->>LC: Fetch statement, examples, constraints
+    Service->>AI: Generate hint, explanation, review, or solution
+    AI-->>Service: Structured markdown answer
+    Service-->>Views: JSON payload
+    Views-->>Web: Render response in mentor output panel
 ```
 
-## Workspace Shape
+### Extension Request Flow
 
-The web dashboard is designed as a three-zone study surface:
+```mermaid
+sequenceDiagram
+    participant User
+    participant Page as LeetCode page
+    participant CS as contentScript.tsx
+    participant BG as background.ts
+    participant API as Express API
+    participant LC as LeetCode
+    participant AI as Groq
 
-- left rail for problem context
-- center for the code editor
-- right rail for mentor actions and responses
+    User->>Page: Open a problem
+    CS->>Page: Extract title, slug, code, language
+    User->>CS: Open sidebar and pick an action
+    CS->>BG: Send runtime API request
+    BG->>API: Forward /api/assistant or /api/leetcode/*
+    API->>LC: Fetch problem metadata when needed
+    API->>AI: Generate mentor response
+    API-->>BG: JSON response
+    BG-->>CS: Return result
+    CS-->>User: Render hint, review, or walkthrough
+```
+
+### Runtime Boundaries
 
 ```mermaid
 flowchart LR
-    A["Problem loader<br/>title, difficulty, tags, examples"] --> B["Code workspace<br/>editor, language, hint level"]
-    B --> C["Mentor rail<br/>actions, output, next step"]
+    A["Browser page DOM"] --> B["Extension content script"]
+    B --> C["Extension background worker"]
+    C --> D["Local Express API :4000"]
+    D --> E["Groq API"]
+    D --> F["LeetCode endpoints"]
+
+    classDef local fill:#111827,stroke:#4b5563,color:#f9fafb;
+    classDef remote fill:#3f1d2e,stroke:#fb7185,color:#fff1f2;
+    class A,B,C,D local;
+    class E,F remote;
 ```
 
-The extension serves a different purpose. It is meant to stay close to the live LeetCode page and provide:
-
-- quick action access
-- live code pickup
-- compact mentor responses
-- a lower-friction debugging loop
-
-## Repository Map
+## Repository Layout
 
 ```mermaid
 flowchart TD
     A["manage.py"] --> B["leetcode_mentor_project/"]
     B --> C["mentor/"]
-    C --> D["views.py, services.py, urls.py"]
+    C --> D["views.py<br/>services.py<br/>urls.py"]
     C --> E["templates/mentor/"]
     C --> F["static/mentor/"]
 
     G["apps/server/"] --> H["Express API for extension"]
-    I["apps/extension/"] --> J["Chrome extension UI"]
-    K["packages/shared/"] --> L["Shared types and constants"]
+    I["apps/extension/"] --> J["React sidebar, content script, background worker"]
+    K["packages/shared/"] --> L["Shared TS types and constants"]
 
     H --> K
     I --> K
+
+    classDef node fill:#0f172a,stroke:#64748b,color:#f8fafc;
+    class A,B,C,D,E,F,G,H,I,J,K,L node;
 ```
 
-## Setup
+## Local Setup
 
 ### 1. Python workspace
-
-Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Create a `.env` file:
+Create a `.env` file in the repo root:
 
 ```env
 DJANGO_SECRET_KEY=replace_me
@@ -231,139 +263,88 @@ AI_MODEL=llama-3.3-70b-versatile
 LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
 ```
 
-Run migrations and start the Django app:
+Run the Django app:
 
 ```bash
 python manage.py migrate
 python manage.py runserver
 ```
 
-Open:
+Open `http://127.0.0.1:8000`.
 
-```text
-http://127.0.0.1:8000
-```
+### 2. Node workspaces
 
-### 2. Node workspace for the extension backend
-
-Install dependencies:
+Install dependencies for the extension stack:
 
 ```bash
 npm install
 ```
 
-Start the extension API server:
+Start the local API used by the Chrome extension:
 
 ```bash
 npm run dev:server
 ```
 
-This runs the assistant backend used by the Chrome extension on:
-
-```text
-http://localhost:4000
-```
+This serves the extension backend at `http://localhost:4000`.
 
 ### 3. Extension build
 
-Build the extension workspace:
+Run the extension dev build:
 
 ```bash
 npm run dev:extension
 ```
 
-## API Requirement
+## API Surfaces
 
-The project expects your own Groq API key. It does not ship with a built-in hosted AI plan.
+### Django app
 
-You need:
+| Route | Purpose |
+| --- | --- |
+| `/api/health/` | Health check |
+| `/api/daily/` | Fetch the daily challenge |
+| `/api/problem/?identifier=...` | Resolve a problem by number, slug, title, or URL |
+| `/api/assistant/` | Generate mentor output for the web dashboard |
 
-- a Groq account
-- a `GROQ_API_KEY`
-- an `AI_MODEL` value
+### Extension API
 
-Without that key, rich mentor responses will be limited or unavailable depending on the surface.
+| Route | Purpose |
+| --- | --- |
+| `/api/leetcode/daily` | Daily challenge for the extension |
+| `/api/leetcode/problem/:identifier` | Problem lookup for the extension |
+| `/api/assistant/chat` | Mentor chat endpoint for the sidebar |
 
-## Recommended Usage Pattern
+## Environment Notes
 
-```mermaid
-flowchart TD
-    A["Load problem"] --> B["Think for a few minutes first"]
-    B --> C["Write a rough attempt"]
-    C --> D{"Still blocked?"}
-    D -->|"Need a starting push"| E["Hint"]
-    D -->|"Statement is unclear"| F["Explain"]
-    D -->|"Bug in my code"| G["Review my code"]
-    D -->|"Need efficiency check"| H["Complexity / Optimize"]
-    D -->|"Need walkthrough"| I["Dry run"]
-    D -->|"Need final reference"| J["Full solution"]
-    E --> C
-    F --> C
-    G --> C
-    H --> C
-    I --> C
-    J --> K["Compare, then rewrite in your own words"]
-```
+- `GROQ_API_KEY` is required for rich AI-generated responses.
+- Without that key, some local fallback logic still helps with hints or guardrails, but the full mentor experience is limited.
+- `AI_MODEL` defaults to `llama-3.3-70b-versatile`.
+- The extension and the Django dashboard are separate runtimes, so deploying the web app does not automatically deploy the extension backend.
 
-## Current Stack
+## Deployment
 
-- Django for the local web app
-- Express for the extension backend
-- React in the extension UI
-- Groq API for mentor responses
-- LeetCode GraphQL for problem data
-- SQLite for local Django persistence
-- MathJax for LaTeX rendering in formatted mentor output
-
-## Near-Term Improvements
-
-```mermaid
-flowchart LR
-    A["Current product"] --> B["Consistent 3-level hint ladder"]
-    A --> C["Better extension compact mode"]
-    A --> D["Saved sessions and history pruning"]
-    A --> E["Stronger language-specific review"]
-    A --> F["Monaco editor integration"]
-    A --> G["Test coverage"]
-    A --> H["Optional deployed backend"]
-```
-
-## Deploying The Django App
-
-The easiest first deployment target is the Django dashboard.
-
-This repository is now set up for production-style deployment with:
+The repository already includes production-oriented Django deployment pieces:
 
 - `gunicorn` as the app server
-- `whitenoise` for static file serving
-- optional `DATABASE_URL` support for PostgreSQL
-- a `build.sh` build script
-- a `render.yaml` blueprint for Render
+- `whitenoise` for static assets
+- optional `DATABASE_URL` support
+- `build.sh` for build steps
+- `render.yaml` for a Render blueprint
 
-### Recommended first path: Render
+### Recommended path: Render
 
 1. Push the repository to GitHub.
-2. In Render, create a new Blueprint from the repository.
-3. Add the missing secret:
-
-```text
-GROQ_API_KEY
-```
-
+2. Create a new Blueprint in Render from the repo.
+3. Add the missing secret: `GROQ_API_KEY`.
 4. Deploy.
 
-Current live deployment:
-
-- [https://leetmentor-1ya8.onrender.com](https://leetmentor-1ya8.onrender.com)
-
-The included blueprint creates:
+The included blueprint provisions:
 
 - one Python web service
 - one PostgreSQL database
 
-### Important production environment variables
-
-Set these in the hosting dashboard, not in source control:
+Important production variables:
 
 ```env
 DJANGO_DEBUG=false
@@ -372,26 +353,41 @@ GROQ_API_KEY=your_real_groq_key
 AI_MODEL=llama-3.3-70b-versatile
 ```
 
-`DATABASE_URL` is supplied automatically by Render when you use the included `render.yaml`.
+`DATABASE_URL` is supplied automatically when you use the included Render blueprint.
 
-### Manual deploy commands
-
-Build command:
+Manual commands:
 
 ```bash
 ./build.sh
-```
-
-Start command:
-
-```bash
 gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT
 ```
 
-### Extension note
+## Current Stack
 
-The Chrome extension backend is separate from the Django dashboard. You can deploy the Django app first and deploy the Node extension API later as a second service if you want the full extension setup online too.
+- Django for the standalone coding workspace
+- HTML, CSS, and vanilla JS for the dashboard shell
+- React and TypeScript for the Chrome extension UI
+- Express for the extension API
+- Groq for mentor responses
+- LeetCode GraphQL and problem index endpoints for problem data
+- SQLite locally, with PostgreSQL support in deployment
+- shared TypeScript contracts in `packages/shared`
+
+## Roadmap
+
+```mermaid
+flowchart LR
+    A["Current foundation"] --> B["Stronger hint ladder"]
+    A --> C["Session history"]
+    A --> D["Language-aware code review"]
+    A --> E["Monaco editor polish"]
+    A --> F["More automated tests"]
+    A --> G["Optional hosted extension backend"]
+
+    classDef future fill:#172554,stroke:#60a5fa,color:#dbeafe;
+    class A,B,C,D,E,F,G future;
+```
 
 ## Bottom Line
 
-LeetMentor is not meant to be a generic chatbot wrapped around LeetCode. It is meant to be a practice environment where you can think, code, ask for targeted help, and build actual problem-solving skill without leaving the workflow.
+LeetMentor is designed to keep students inside the real interview-prep loop: read, think, code, ask, revise, and understand. The README should reflect that same idea, so the docs now explain both the teaching model and the actual system boundaries clearly enough for a contributor, reviewer, or recruiter to understand the product fast.
