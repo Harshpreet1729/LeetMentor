@@ -9,8 +9,8 @@
     <link rel="icon" type="image/svg+xml" href="{% static 'brand/leetmentor-mark.svg' %}" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=JetBrains+Mono:wght@500;600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'css/app.css' %}?v=20260628-refined-1" />
     <script>
       window.MathJax = {
         tex: {
@@ -33,19 +33,18 @@
             </span>
             <span class="brand__text">
               <strong>LeetMentor</strong>
-              <small>AI coding assistant</small>
             </span>
           </a>
 
-          <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" data-nav-toggle>
+          <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open navigation menu" data-nav-toggle>
             <span class="nav-toggle__line"></span>
             <span class="nav-toggle__line"></span>
           </button>
 
           <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
-            <a href="#problem-loader">Problem</a>
-            <a href="#workspace">Workspace</a>
-            <a href="#mentor-output">Mentor</a>
+            <a class="site-nav__link" href="#problem-loader">Problem</a>
+            <a class="site-nav__link site-nav__link--active" href="#workspace">Workspace</a>
+            <a class="site-nav__link" href="#mentor-output">Mentor</a>
           </nav>
         </div>
       </header>
@@ -63,11 +62,11 @@
       </main>
 
       <footer class="site-footer">
-        <p>LeetMentor keeps problem loading, code practice, and mentor guidance in one focused place.</p>
+        <p>LeetMentor keeps your LeetCode problem, code draft, and mentor feedback in one calm practice loop.</p>
       </footer>
     </div>
 
-    <script src="{% static 'js/app.js' %}"></script>
+    <script src="{% static 'js/app.js' %}?v=20260627-design-md-1"></script>
     {% block extra_js %}{% endblock %}
   </body>
 </html>

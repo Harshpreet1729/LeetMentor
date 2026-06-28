@@ -4,78 +4,69 @@
 {% block title %}LeetMentor Workspace{% endblock %}
 
 {% block extra_head %}
-  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}" />
+  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20260628-refined-1" />
 {% endblock %}
 
 {% block content %}
   <section class="hero">
-    <div class="hero__copy">
-      <p class="eyebrow">LeetCode practice desk</p>
-      <h1>Focused prep with just enough help.</h1>
+    <div class="hero__content">
+      <h1>LeetMentor practice desk.</h1>
       <p class="hero__body">
-        Load a problem, write your own attempt, and use the mentor only when you need a hint, a review, or a cleaner next step.
+        Load a problem, write the attempt, and use the mentor only when you need a hint, review, or dry run.
       </p>
-      <p id="workspaceProblemMeta" class="hero__status">Load a problem to begin a guided practice session.</p>
+      <div class="hero__actions">
+        <a class="button button--primary button--hero" href="#problem-loader">Load a problem</a>
+        <a class="button button--secondary button--hero" href="#workspace">Open workspace</a>
+      </div>
     </div>
-    <div class="hero__panel">
-      <div class="hero__meta">
-        <span>Problem lookup</span>
-        <span>Focused editor</span>
-        <span>Structured mentor output</span>
+    <article class="panel panel--compact hero__starter" id="problem-loader">
+      <div class="hero__starter-top">
+        <h2>Load a problem</h2>
         <span id="serverStateChip">Server ready</span>
       </div>
-      <div class="hero__checklist" aria-label="Study workflow">
-        <article class="mini-card">
-          <span class="mini-card__label">1. Load</span>
-          <strong>Start with a number, slug, title, or URL.</strong>
-        </article>
-        <article class="mini-card">
-          <span class="mini-card__label">2. Attempt</span>
-          <strong>Write your own code before asking for help.</strong>
-        </article>
-        <article class="mini-card">
-          <span class="mini-card__label">3. Improve</span>
-          <strong>Use hints, debugging, and complexity checks deliberately.</strong>
-        </article>
+      <p class="hero__panel-note">Paste a LeetCode number, title, slug, or full URL to open the problem instantly.</p>
+      <label class="field-label" for="problemIdentifier">Problem number, title, slug, or LeetCode URL</label>
+      <div class="field-row field-row--hero">
+        <input
+          id="problemIdentifier"
+          class="input"
+          placeholder="e.g. 1, two-sum, or https://leetcode.com/problems/two-sum/"
+          autocomplete="off"
+        />
+        <button id="loadProblemBtn" class="button button--primary" type="button">Load problem</button>
       </div>
-    </div>
+      <div class="hero__starter-actions">
+        <button id="dailyBtn" class="button button--ghost" type="button">Today's daily</button>
+        <a class="button button--secondary" href="#mentor-output">Jump to mentor</a>
+      </div>
+      <p id="problemStatus" class="status-text" role="status">Ready.</p>
+    </article>
   </section>
 
   <section class="workspace-grid">
     <aside class="workspace-sidebar">
-      <article class="panel panel--compact" id="problem-loader">
-        <div class="panel__header">
-          <div>
-            <p class="panel__eyebrow">Problem source</p>
-            <h2>Load problem</h2>
-          </div>
-          <button id="dailyBtn" class="button button--ghost" type="button">Today</button>
+      <article class="panel session-panel">
+        <div class="rail-title">
+          <span class="rail-title__dot"></span>
+          <h2>Current session</h2>
         </div>
-
-        <label class="field-label" for="problemIdentifier">Problem number, slug, title, or LeetCode URL</label>
-        <div class="field-row">
-          <input
-            id="problemIdentifier"
-            class="input"
-            placeholder="e.g. 1, two-sum, or a LeetCode URL"
-            autocomplete="off"
-          />
-          <button id="loadProblemBtn" class="button button--primary" type="button">Load</button>
-        </div>
-        <p id="problemStatus" class="status-text" role="status">Ready.</p>
+        <p id="workspaceProblemMeta" class="session-panel__body">Load a problem to begin a guided practice session.</p>
       </article>
 
       <article class="panel" id="problem-context">
         <div class="panel__header">
           <div>
-            <p class="panel__eyebrow">Current problem</p>
             <h2 id="problemTitle">No problem loaded yet</h2>
+            <p class="panel__subcopy">Current problem</p>
           </div>
           <span id="difficultyBadge" class="badge hidden"></span>
         </div>
 
-        <a id="problemLink" class="text-link hidden" target="_blank" rel="noreferrer">Open on LeetCode</a>
-        <p id="problemStatementPreview" class="hidden">Load a problem to see a concise summary here.</p>
+        <div class="problem-summary">
+          <a id="problemLink" class="text-link hidden" target="_blank" rel="noreferrer">Open on LeetCode</a>
+          <p id="problemStatement" class="problem-meta">Difficulty, topics, and a short summary appear here after you load a problem.</p>
+          <p id="problemStatementPreview" class="problem-preview hidden">Load a problem to see a concise summary here.</p>
+        </div>
 
         <div id="tagList" class="tag-row"></div>
 
@@ -94,11 +85,11 @@
         </details>
       </article>
 
-      <article class="panel panel--compact">
+      <article class="panel panel--compact rhythm-panel">
         <div class="panel__header">
           <div>
-            <p class="panel__eyebrow">Study pattern</p>
             <h2>Use the mentor well</h2>
+            <p class="panel__subcopy">Practice rhythm</p>
           </div>
         </div>
         <ul class="guide-list">
@@ -111,11 +102,11 @@
     </aside>
 
     <div class="workspace-main" id="workspace">
-      <article class="panel">
+      <article class="panel workspace-panel">
         <div class="panel__header panel__header--stack-mobile">
           <div>
-            <p class="panel__eyebrow">Workspace</p>
-            <h2>Code</h2>
+            <h2>Code workspace</h2>
+            <p class="panel__subcopy">Keep your own reasoning in the driver seat.</p>
           </div>
           <div class="toolbar">
             <select id="languageSelect" class="input input--select">
@@ -131,7 +122,7 @@
             </select>
           </div>
         </div>
-        <p class="section-note">Keep your own reasoning in the driver seat. The editor is your workspace; the mentor is the assistant.</p>
+        <p class="section-note">The editor is your workspace; the mentor is the assistant.</p>
 
         <div class="editor-frame">
           <div class="editor-frame__bar">
@@ -147,21 +138,49 @@
 
         <p id="editorAutosave" class="helper-text">Autosave idle</p>
       </article>
+    </div>
 
-      <article class="panel panel--split" id="mentor-output">
+    <aside class="workspace-mentor">
+      <article class="panel mentor-shell" id="mentor-output">
+        <button
+          id="mentorResponseBackdrop"
+          class="mentor-response-backdrop"
+          type="button"
+          aria-label="Close mentor output overlay"
+        ></button>
+
         <div class="mentor-actions">
           <div class="panel__header">
             <div>
-              <p class="panel__eyebrow">Mentor actions</p>
-              <h2>Choose an action</h2>
+              <h2>Mentor actions</h2>
+              <p class="panel__subcopy">Choose the smallest useful intervention.</p>
             </div>
           </div>
 
-          <div class="action-grid action-grid--primary">
-            <button class="button button--mode active" data-mode="hint" type="button">Hint</button>
-            <button class="button button--mode" data-mode="explain" type="button">Explain the problem</button>
-            <button class="button button--mode button--wide" data-mode="debug" type="button">Review my code</button>
+          <div class="action-grid action-grid--stack">
+            <button class="button button--mode active" data-mode="hint" type="button">
+              <span class="button__copy">
+                <strong>Hint</strong>
+                <small>Start with the lightest useful push.</small>
+              </span>
+              <span class="button__chevron" aria-hidden="true"></span>
+            </button>
+            <button class="button button--mode" data-mode="explain" type="button">
+              <span class="button__copy">
+                <strong>Explain the problem</strong>
+                <small>Simplify the statement and the goal.</small>
+              </span>
+              <span class="button__chevron" aria-hidden="true"></span>
+            </button>
+            <button class="button button--mode" data-mode="debug" type="button">
+              <span class="button__copy">
+                <strong>Review my code</strong>
+                <small>Debug the draft you already wrote.</small>
+              </span>
+              <span class="button__chevron" aria-hidden="true"></span>
+            </button>
           </div>
+
           <div class="action-external">
             <p class="action-subtitle">External tools</p>
             <div class="action-grid action-grid--external">
@@ -169,6 +188,7 @@
               <button id="youtubeSearchBtn" class="button button--mode button--ghost" type="button">YouTube solution</button>
             </div>
           </div>
+
           <p class="action-note">Hints now move from a real starting push, to approach direction, to the actual solving flow. Use advanced actions only when you want a tighter complexity check or a real dry run.</p>
 
           <details class="detail-toggle detail-toggle--compact">
@@ -180,13 +200,16 @@
           </details>
         </div>
 
-        <div class="mentor-response">
+        <div class="mentor-response" id="mentorResponsePanel" tabindex="-1">
           <div class="panel__header">
             <div>
-              <p class="panel__eyebrow">Mentor output</p>
-              <h2>Response</h2>
+              <h2>Mentor output</h2>
+              <p class="panel__subcopy">Your explanation, review, or dry run appears here.</p>
             </div>
-            <button id="clearOutputBtn" class="button button--ghost" type="button">Clear</button>
+            <div class="mentor-response__actions">
+              <button id="clearOutputBtn" class="button button--ghost" type="button">Clear</button>
+              <button id="closeOutputBtn" class="button button--ghost button--compact hidden" type="button">Close</button>
+            </div>
           </div>
 
           <p id="assistantStatus" class="status-text" role="status">Load a problem, then choose one action.</p>
@@ -199,10 +222,10 @@
           <p id="nextStep" class="next-step hidden"></p>
         </div>
       </article>
-    </div>
+    </aside>
   </section>
 {% endblock %}
 
 {% block extra_js %}
-  <script src="{% static 'mentor/app.js' %}"></script>
+  <script src="{% static 'mentor/app.js' %}?v=20260628-refined-1"></script>
 {% endblock %}

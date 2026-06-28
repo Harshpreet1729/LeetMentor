@@ -22,6 +22,9 @@
 
   const byId = (id) => document.getElementById(id);
   const els = {
+    mentorShell: byId("mentor-output"),
+    mentorResponsePanel: byId("mentorResponsePanel"),
+    mentorResponseBackdrop: byId("mentorResponseBackdrop"),
     problemIdentifier: byId("problemIdentifier"),
     problemStatus: byId("problemStatus"),
     dailyBtn: byId("dailyBtn"),
@@ -33,6 +36,7 @@
     problemLink: byId("problemLink"),
     problemStatementPreview: byId("problemStatementPreview"),
     problemStatement: byId("problemStatement"),
+    problemDetails: document.querySelector("#problem-context .detail-toggle"),
     problemExamples: byId("problemExamples"),
     problemConstraints: byId("problemConstraints"),
     contextTabs: Array.from(document.querySelectorAll("[data-context-tab]")),
@@ -51,6 +55,7 @@
     askChatgptBtn: byId("askChatgptBtn"),
     youtubeSearchBtn: byId("youtubeSearchBtn"),
     clearOutputBtn: byId("clearOutputBtn"),
+    closeOutputBtn: byId("closeOutputBtn"),
     modeButtons: Array.from(document.querySelectorAll("[data-mode]"))
   };
 
@@ -59,6 +64,13 @@
       return;
     }
     element.textContent = text;
+  }
+
+  function setHidden(element, hidden) {
+    if (!element) {
+      return;
+    }
+    element.classList.toggle("hidden", hidden);
   }
 
   function setStatusTone(element, tone) {
@@ -84,6 +96,34 @@
     return new Promise((resolve) => {
       window.setTimeout(resolve, ms);
     });
+  }
+
+  function isResponsePopoverOpen() {
+    return Boolean(els.mentorShell?.classList.contains("mentor-shell--response-open"));
+  }
+
+  function setResponsePopoverOpen(isOpen, options = {}) {
+    if (!els.mentorShell || !els.mentorResponsePanel) {
+      return;
+    }
+
+    els.mentorShell.classList.toggle("mentor-shell--response-open", isOpen);
+    setHidden(els.closeOutputBtn, !isOpen);
+    els.mentorResponsePanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
+    if (els.mentorResponseBackdrop) {
+      els.mentorResponseBackdrop.setAttribute("aria-hidden", isOpen ? "false" : "true");
+    }
+
+    if (isOpen) {
+      window.requestAnimationFrame(() => {
+        if (els.assistantOutput) {
+          els.assistantOutput.scrollTop = 0;
+        }
+        if (options.focusPanel) {
+          els.mentorResponsePanel.focus({ preventScroll: true });
+        }
+      });
+    }
   }
 
   function setContextTab(tabName) {
@@ -205,6 +245,7 @@
       .join("");
 
     els.assistantOutput.innerHTML = html;
+    els.assistantOutput.scrollTop = 0;
 
     if (window.MathJax && window.MathJax.typesetPromise) {
       window.MathJax.typesetPromise([els.assistantOutput]).catch(() => {});
@@ -348,7 +389,7 @@
       try {
         const parsed = JSON.parse(savedProblem);
         if (parsed && typeof parsed === "object") {
-          setProblem(parsed);
+          applyProblemState(parsed);
           setStatusTone(els.problemStatus, "neutral");
           setText(els.problemStatus, "Restored your last loaded problem.");
         }
@@ -453,7 +494,7 @@
     return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
   }
 
-  function setProblem(problem) {
+  function legacySetProblem(problem) {
     state.problem = problem;
     const tags = (problem.tags || []).join(", ");
     setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
@@ -503,6 +544,67 @@
 
     els.tagList.innerHTML = "";
     (problem.tags || []).forEach((tag) => {
+      const chip = document.createElement("span");
+      chip.className = "tag";
+      chip.textContent = tag;
+      els.tagList.appendChild(chip);
+    });
+    saveWorkspaceSnapshot();
+  }
+
+  function applyProblemState(problem) {
+    state.problem = problem;
+    const tags = Array.isArray(problem.tags) ? problem.tags.filter(Boolean) : [];
+    const summaryTags = tags.slice(0, 3);
+    const difficulty = problem.difficulty || "Unknown";
+    const hasExpandedContext = Boolean(
+      (Array.isArray(problem.exampleCards) && problem.exampleCards.length) ||
+      (Array.isArray(problem.examples) && problem.examples.length) ||
+      (Array.isArray(problem.constraints) && problem.constraints.length)
+    );
+
+    setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
+    setText(els.problemStatementPreview, problemPreviewText(problem));
+    setText(
+      els.problemStatement,
+      problem.title
+        ? `Difficulty: ${difficulty}${tags.length ? ` - Topics: ${tags.join(", ")}` : ""}`
+        : "Difficulty, topics, and a short summary appear here after you load a problem."
+    );
+    setText(
+      els.workspaceProblemMeta,
+      problem.title
+        ? `${problem.questionFrontendId}. ${problem.title} - ${difficulty}${summaryTags.length ? ` - ${summaryTags.join(" - ")}` : ""}`
+        : "Load a problem to begin a guided practice session."
+    );
+    setHidden(els.problemStatementPreview, !problem.title);
+    setHidden(els.problemDetails, !hasExpandedContext);
+    renderProblemExamples(problem.exampleCards, problem.examples);
+    renderProblemConstraints(problem.constraints);
+    setContextTab("statement");
+
+    if (problem.link) {
+      els.problemLink.href = problem.link;
+      setHidden(els.problemLink, false);
+      setText(els.problemLink, "Open on LeetCode");
+    } else {
+      els.problemLink.removeAttribute("href");
+      setHidden(els.problemLink, true);
+    }
+
+    if (problem.difficulty) {
+      setText(els.difficultyBadge, problem.difficulty);
+      els.difficultyBadge.classList.remove("badge--easy", "badge--medium", "badge--hard");
+      els.difficultyBadge.classList.add(`badge--${problem.difficulty.toLowerCase()}`);
+      setHidden(els.difficultyBadge, false);
+    } else {
+      setText(els.difficultyBadge, "");
+      els.difficultyBadge.classList.remove("badge--easy", "badge--medium", "badge--hard");
+      setHidden(els.difficultyBadge, true);
+    }
+
+    els.tagList.innerHTML = "";
+    tags.forEach((tag) => {
       const chip = document.createElement("span");
       chip.className = "tag";
       chip.textContent = tag;
@@ -709,7 +811,7 @@
           }
         }
       );
-      setProblem(data.problem);
+      applyProblemState(data.problem);
       setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Daily challenge loaded.");
     } catch (error) {
@@ -749,7 +851,7 @@
           }
         }
       );
-      setProblem(data.problem);
+      applyProblemState(data.problem);
       setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Problem loaded.");
     } catch (error) {
@@ -781,6 +883,7 @@
     };
 
     if (mode === "debug" && !payload.userCode) {
+      setResponsePopoverOpen(true, { focusPanel: true });
       setStatusTone(els.assistantStatus, "error");
       setText(els.assistantStatus, "Add your code first so the mentor can review the actual solution.");
       renderAssistantOutput([
@@ -795,6 +898,7 @@
       return;
     }
 
+    setResponsePopoverOpen(true, { focusPanel: true });
     setBusy(true);
     setStatusTone(els.assistantStatus, "loading");
     setText(els.assistantStatus, "Thinking...");
@@ -869,12 +973,23 @@
   if (els.youtubeSearchBtn) {
     els.youtubeSearchBtn.addEventListener("click", openYouTubeWithProblem);
   }
+  if (els.mentorResponseBackdrop) {
+    els.mentorResponseBackdrop.addEventListener("click", () => {
+      setResponsePopoverOpen(false);
+    });
+  }
+  if (els.closeOutputBtn) {
+    els.closeOutputBtn.addEventListener("click", () => {
+      setResponsePopoverOpen(false);
+    });
+  }
   els.clearOutputBtn.addEventListener("click", () => {
     setStatusTone(els.assistantStatus, "neutral");
     setText(els.assistantStatus, "Output cleared.");
     renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
     setText(els.nextStep, "");
     els.nextStep.classList.add("hidden");
+    setResponsePopoverOpen(false);
   });
 
   els.problemIdentifier.addEventListener("keydown", (event) => {
@@ -910,6 +1025,11 @@
       warmServerInBackground();
     }
   });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && isResponsePopoverOpen()) {
+      setResponsePopoverOpen(false);
+    }
+  });
 
   setActiveMode("hint");
   setContextTab("statement");
@@ -918,5 +1038,6 @@
   updateServerChip("Server ready", "success");
   setStatusTone(els.problemStatus, "neutral");
   setStatusTone(els.assistantStatus, "neutral");
+  setResponsePopoverOpen(false);
   renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
 })();

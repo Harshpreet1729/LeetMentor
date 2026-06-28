@@ -1158,6 +1158,11 @@ class AIService:
         code = (payload.get("userCode") or "").strip()
         language = payload.get("language") or "C++"
 
+        if mode == "hint":
+            hint_level = int(payload.get("hintLevel") or 1)
+            return self._generate_progressive_hint(problem, hint_level)
+        if mode == "explain":
+            return self._generate_concise_explanation(problem)
         if mode == "complexity":
             return self._generate_complexity_fallback(problem, code)
         if mode == "debug":

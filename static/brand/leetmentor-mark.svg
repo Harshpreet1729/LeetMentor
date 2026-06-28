@@ -1,8 +1,8 @@
 <svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">LeetMentor logo mark</title>
-  <desc id="desc">A minimal bracket-inspired coding mark with a looped path suggesting progress.</desc>
-  <rect x="8" y="8" width="80" height="80" rx="24" fill="#111618"/>
-  <path d="M34 28L20 48L34 68" stroke="#B4EADB" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M63 28C56 28 50 34 50 42C50 51 57 57 64 57H67C72.523 57 77 61.477 77 67C77 72.523 72.523 77 67 77H60" stroke="#8FD3C1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M60 77L72 67L60 57" stroke="#8FD3C1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <desc id="desc">A distinct coding-inspired mark with a left bracket and a rising mentor path.</desc>
+  <rect x="8" y="8" width="80" height="80" rx="24" fill="#08111B"/>
+  <path d="M31 26L18 48L31 70" stroke="#63E0DA" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M42 62L56 34C58.5 29.2 64.7 27.4 69.4 29.9C74 32.3 75.8 38.1 73.6 42.8L60.8 68.3C58.5 72.7 53.4 74.5 49 72.2C45.9 70.6 44 67.4 44 64" stroke="#B9F1E4" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="63.5" cy="64.5" r="5.5" fill="#63E0DA"/>
 </svg>
