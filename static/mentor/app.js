@@ -59,6 +59,13 @@
     modeButtons: Array.from(document.querySelectorAll("[data-mode]"))
   };
 
+  if (els.mentorResponseBackdrop && els.mentorResponseBackdrop.parentElement !== document.body) {
+    document.body.appendChild(els.mentorResponseBackdrop);
+  }
+  if (els.mentorResponsePanel && els.mentorResponsePanel.parentElement !== document.body) {
+    document.body.appendChild(els.mentorResponsePanel);
+  }
+
   function setText(element, text) {
     if (!element) {
       return;
@@ -99,7 +106,7 @@
   }
 
   function isResponsePopoverOpen() {
-    return Boolean(els.mentorShell?.classList.contains("mentor-shell--response-open"));
+    return document.body.classList.contains("mentor-response-is-open");
   }
 
   function setResponsePopoverOpen(isOpen, options = {}) {
@@ -108,6 +115,7 @@
     }
 
     els.mentorShell.classList.toggle("mentor-shell--response-open", isOpen);
+    document.body.classList.toggle("mentor-response-is-open", isOpen);
     setHidden(els.closeOutputBtn, !isOpen);
     els.mentorResponsePanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
     if (els.mentorResponseBackdrop) {
@@ -143,11 +151,30 @@
   }
 
   function renderInlineMarkdown(text) {
-    let html = escapeHtml(text);
-    html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+    const codeSpans = [];
+    let html = String(text || "").replace(/`([^`]+)`/g, (_, code) => {
+      const token = `@@CODE_SPAN_${codeSpans.length}@@`;
+      codeSpans.push(`<code>${escapeHtml(code)}</code>`);
+      return token;
+    });
+    html = escapeHtml(html);
     html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+    html = html.replace(/@@CODE_SPAN_(\d+)@@/g, (_, index) => codeSpans[Number(index)] || "");
     return html;
+  }
+
+  function renderTechnicalInline(text) {
+    const tokens = [];
+    const source = String(text || "").replace(
+      /(\[[a-zA-Z0-9_,\s-]+\]|\b[a-zA-Z_]\w*\[[^\]]+\]|\b[a-zA-Z]+_[a-zA-Z0-9_]+\b|\bn\s*-\s*1\b)/g,
+      (match) => {
+        const token = `@@TECH_TOKEN_${tokens.length}@@`;
+        tokens.push(`<code>${escapeHtml(match)}</code>`);
+        return token;
+      }
+    );
+
+    return escapeHtml(source).replace(/@@TECH_TOKEN_(\d+)@@/g, (_, index) => tokens[Number(index)] || "");
   }
 
   function renderList(lines, ordered) {
@@ -155,7 +182,7 @@
     const items = lines.map((line, index) => {
       const content = ordered
         ? line.replace(/^\d+\.\s+/, "")
-        : line.replace(/^-\s+/, "");
+        : line.replace(/^[-*]\s+/, "");
       return `<li>${renderInlineMarkdown(content)}</li>`;
     });
     return `<${tag}>${items.join("")}</${tag}>`;
@@ -165,8 +192,11 @@
     return String(text || "")
       .replace(/\r/g, "")
       .replace(/(### [^\n`]+?)\s+```/g, "$1\n\n```")
+      .replace(/(### (?:Coding plan|Steps))\s+[-*]\s+/gi, "$1\n\n- ")
+      .replace(/(### (?:Coding plan|Steps))\s+(\d+\.\s+)/gi, "$1\n\n$2")
       .replace(/(### [^\n]+?)\s+(?=\d+\.\s)/g, "$1\n\n")
       .replace(/(### [^\n]+?)\s+(?=[A-Z][a-z])/g, "$1\n\n")
+      .replace(/^(#{2,4} [^\n]+)\n(?!\n)/gm, "$1\n\n")
       .replace(/```(\w+)?\s+/g, (_, language) => `\n\`\`\`${language || ""}\n`)
       .replace(/\n{3,}/g, "\n\n")
       .trim();
@@ -199,7 +229,7 @@
         }
 
         const lines = cleaned.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (lines.every((line) => /^-\s+/.test(line))) {
+        if (lines.every((line) => /^[-*]\s+/.test(line))) {
           return renderList(lines, false);
         }
         if (lines.every((line) => /^\d+\.\s+/.test(line))) {
@@ -327,6 +357,13 @@
       return "Load a problem to see a concise summary here.";
     }
     return statement.length > 180 ? `${statement.slice(0, 180).trimEnd()}...` : statement;
+  }
+
+  function renderProblemPreview(problem) {
+    if (!els.problemStatementPreview) {
+      return;
+    }
+    els.problemStatementPreview.innerHTML = renderTechnicalInline(problemPreviewText(problem));
   }
 
   function saveWorkspaceSnapshot() {
@@ -498,7 +535,7 @@
     state.problem = problem;
     const tags = (problem.tags || []).join(", ");
     setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
-    setText(els.problemStatementPreview, problemPreviewText(problem));
+    renderProblemPreview(problem);
     setText(
       els.problemStatement,
       problem.title
@@ -564,7 +601,7 @@
     );
 
     setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
-    setText(els.problemStatementPreview, problemPreviewText(problem));
+    renderProblemPreview(problem);
     setText(
       els.problemStatement,
       problem.title
@@ -665,6 +702,16 @@
       error.statusCode = statusCode;
     }
     return error;
+  }
+
+  function isLeetCodeReachabilityError(error) {
+    const message = String(error?.message || "").toLowerCase();
+    return (
+      error?.statusCode === 503 ||
+      message.includes("could not reach leetcode") ||
+      message.includes("leetcode request failed") ||
+      message.includes("check your internet connection")
+    );
   }
 
   async function fetchJson(url, options, timeoutMs = 25000) {
@@ -815,8 +862,13 @@
       setStatusTone(els.problemStatus, "success");
       setText(els.problemStatus, "Daily challenge loaded.");
     } catch (error) {
-      setStatusTone(els.problemStatus, "error");
-      setText(els.problemStatus, error.name === "AbortError" ? "Daily problem request timed out." : error.message);
+      if (isLeetCodeReachabilityError(error)) {
+        setStatusTone(els.problemStatus, "warning");
+        setText(els.problemStatus, "LeetCode daily is not reachable right now. Enter a problem number or slug above and load it manually.");
+      } else {
+        setStatusTone(els.problemStatus, "error");
+        setText(els.problemStatus, error.name === "AbortError" ? "Daily problem request timed out." : error.message);
+      }
     } finally {
       setBusy(false);
     }

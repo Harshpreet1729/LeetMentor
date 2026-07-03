@@ -26,7 +26,7 @@ function createMessage(role: ChatMessage["role"], content: string, mode?: Assist
 function defaultPromptForMode(mode: AssistantMode, hintLevel: number): string {
   switch (mode) {
     case "hint":
-      return `Give me only a short directional level ${hintLevel} hint.`;
+      return `Give me a practical level ${hintLevel} hint that tells me what to notice, what to try next, and how to check my direction.`;
     case "debug":
       return "Review my current code from the live LeetCode editor.";
     case "complexity":

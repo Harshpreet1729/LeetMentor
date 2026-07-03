@@ -5,7 +5,8 @@ const DEFAULT_MODEL = "llama-3.3-70b-versatile";
 const GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const modeGuidance: Record<AssistantRequest["mode"], string> = {
-  hint: "Give a progressive hint only. Respect hint level exactly. Make the hint actionable enough for the student to begin writing. Level 1 must include one tiny starter cue line in backticks. Level 3 must describe the solving algorithm, not a dry run. Do not use full code.",
+  hint:
+    "Give a progressive, practical coaching hint only. Ground it in the actual problem statement, examples, and constraints. Tell the student what to notice, what to try next, and how to check they are on track. Do not reveal full code.",
   explain: "Explain only what the problem is asking. Include the goal, key rules, one small example, and the subtle point students often miss. Do not give the algorithm or code.",
   debug: "Review the student's actual code. Identify the exact bug, explain why it fails on one concrete case, and show the corrected version in a fenced code block only if needed.",
   complexity: "State the current time and space complexity precisely using LaTeX, then say whether a better approach exists and what its complexity would be.",
@@ -62,9 +63,9 @@ export class AIService {
           { role: "system", content: assistantSystemPrompt },
           { role: "user", content: this.buildUserPrompt(request) }
         ],
-        temperature: request.mode === "hint" ? 0.35 : 0.5,
-        top_p: 0.95,
-        max_tokens: request.mode === "hint" ? 180 : 1800
+        temperature: request.mode === "hint" ? 0.25 : 0.5,
+        top_p: request.mode === "hint" ? 0.9 : 0.95,
+        max_tokens: request.mode === "hint" ? 420 : 1800
       })
     });
 
@@ -113,6 +114,15 @@ export class AIService {
       request.hintLevel ? `Hint level: ${request.hintLevel}` : "",
       request.language ? `Preferred language: ${request.language}` : "Preferred language: C++",
       request.userQuestion ? `Student question: ${request.userQuestion}` : "",
+      request.mode === "hint"
+        ? [
+            "Hint safety checklist:",
+            "- Match the exact title, statement, examples, and constraints below.",
+            "- Verify the approach against the first example before answering.",
+            "- Do not solve a different LeetCode question with a similar title.",
+            "- Prefer a safe next coding move over a broad theory explanation."
+          ].join("\n")
+        : "",
       request.problem
         ? `Problem context:
 Title: ${request.problem.title}
@@ -153,7 +163,7 @@ Constraints: ${request.problem.constraints.join("\n")}`
   private suggestNextStep(mode: AssistantRequest["mode"]): string {
     switch (mode) {
       case "hint":
-        return "Ask for the next hint level only if you still feel stuck.";
+        return "Code the hinted next step first; ask for the next hint only if that checkpoint still blocks you.";
       case "debug":
         return "Run the corrected logic on one more edge case.";
       case "complexity":
@@ -168,9 +178,14 @@ Constraints: ${request.problem.constraints.join("\n")}`
       return [
         "Use this exact section order:",
         "### Starting hint",
-        "Write 1 or 2 short sentences about the best first move.",
+        "Write 2 short sentences: first, what to notice in this exact problem; second, why that observation points to the next move.",
+        "### Try this next",
+        "Write 1 concrete action the student can code or decide now. It must be specific to the problem, not generic advice.",
+        "### Self-check",
+        "Write 1 short question the student can ask to know whether the direction is correct.",
         "### Starter cue",
-        "Write exactly 1 short line in backticks with a formula, expression, or variable setup.",
+        "Write exactly 1 short line in backticks with a formula, expression, loop condition, variable name, or invariant.",
+        "Do not include `std::`, imports, library names, class wrappers, semicolons, or full type declarations in the starter cue.",
         "Do not include full code."
       ].join("\n");
     }
@@ -179,9 +194,13 @@ Constraints: ${request.problem.constraints.join("\n")}`
       return [
         "Use this exact section order:",
         "### Directional hint",
-        "Write 2 to 4 short sentences about the flow of the approach.",
+        "Write 2 to 3 short sentences naming the likely pattern and why it fits the given constraints/examples.",
+        "### Coding plan",
+        "Write exactly 3 numbered steps, using `1.`, `2.`, and `3.`.",
+        "Each step must be one short action the student can code next, not a paragraph.",
+        "Keep each step under 18 words and do not include full code.",
         "### Checkpoint",
-        "Write 1 short sentence about the condition, update order, or invariant to verify next.",
+        "Write 1 short sentence about the condition, update order, invariant, or edge case the student should verify.",
         "Do not include code."
       ].join("\n");
     }
@@ -190,9 +209,11 @@ Constraints: ${request.problem.constraints.join("\n")}`
       "Use this exact section order:",
       "### Algorithm hint",
       "### Core idea",
-      "Write 1 or 2 short sentences about the state, structure, or pattern.",
+      "Write 1 or 2 short sentences about the state, structure, or pattern that solves this exact problem and why.",
       "### Steps",
       "Write exactly 4 numbered, problem-specific steps describing the solving algorithm.",
+      "### Edge check",
+      "Write 1 edge case or sample condition the student should test after coding.",
       "Do not include code."
     ].join("\n");
   }
@@ -200,17 +221,43 @@ Constraints: ${request.problem.constraints.join("\n")}`
   private isHintShapeValid(answer: string, hintLevel: number): boolean {
     const normalized = answer.toLowerCase();
     if (hintLevel === 1) {
-      return normalized.includes("### starting hint") && normalized.includes("### starter cue") && answer.includes("`");
+      return (
+        normalized.includes("### starting hint") &&
+        normalized.includes("### try this next") &&
+        normalized.includes("### self-check") &&
+        normalized.includes("### starter cue") &&
+        answer.includes("`") &&
+        !this.hasBadStarterCue(answer)
+      );
     }
     if (hintLevel === 2) {
-      return normalized.includes("### directional hint") && normalized.includes("### checkpoint");
+      return (
+        normalized.includes("### directional hint") &&
+        normalized.includes("### coding plan") &&
+        normalized.includes("### checkpoint")
+      );
     }
     return (
       normalized.includes("### algorithm hint") &&
       normalized.includes("### core idea") &&
       normalized.includes("### steps") &&
+      normalized.includes("### edge check") &&
       (answer.match(/^\d+\.\s/gm) ?? []).length === 4
     );
+  }
+
+  private hasBadStarterCue(answer: string): boolean {
+    const match = answer.match(/### starter cue\s+`([^`]+)`/i);
+    if (!match) {
+      return true;
+    }
+
+    const cue = match[1].trim();
+    if (cue.length > 90) {
+      return true;
+    }
+
+    return /(std\s*::|#include|using\s+namespace|class\s+solution|\b(?:vector|map|unordered_map|unordered_set|set|queue|stack|priority_queue)\s*<|\b(?:int|long|double|bool|string|auto|char)\s+\w+\s*[;=({])/i.test(cue);
   }
 
   private generateProgressiveHint(request: AssistantRequest): string | null {
@@ -223,134 +270,232 @@ Constraints: ${request.problem.constraints.join("\n")}`
     const hintLevel = request.hintLevel ?? 1;
     const statement = `${problem.title} ${problem.statement}`.toLowerCase();
 
-    if (tags.includes("hash table")) {
-      if (hintLevel === 1) {
-        return ["### Starting hint", "Do one left-to-right pass and ask what partner value would finish the answer for the current value.", "", "### Starter cue", "`need = target - nums[i]`"].join("\n");
-      }
-      if (hintLevel === 2) {
-        return ["### Directional hint", "Keep a lookup of earlier values so each new value can check its partner instantly.", "", "### Checkpoint", "Query the lookup before inserting the current value."].join("\n");
-      }
-      return [
+    const levelOne = (notice: string, tryNext: string, selfCheck: string, cue: string): string =>
+      [
+        "### Starting hint",
+        notice,
+        "",
+        "### Try this next",
+        tryNext,
+        "",
+        "### Self-check",
+        selfCheck,
+        "",
+        "### Starter cue",
+        `\`${cue}\``
+      ].join("\n");
+
+    const levelTwo = (direction: string, plan: string[], checkpoint: string): string =>
+      [
+        "### Directional hint",
+        direction,
+        "",
+        "### Coding plan",
+        ...plan.slice(0, 3).map((step, index) => `${index + 1}. ${step}`),
+        "",
+        "### Checkpoint",
+        checkpoint
+      ].join("\n");
+
+    const levelThree = (coreIdea: string, steps: string[], edgeCheck: string): string =>
+      [
         "### Algorithm hint",
         "### Core idea",
-        "Use one pass plus a lookup table so each value can ask whether its partner has already appeared.",
+        coreIdea,
         "",
         "### Steps",
-        "1. Create a lookup table for values already seen.",
-        "2. Scan the input and compute the partner needed for the current value.",
-        "3. If that partner exists in the lookup table, form the answer from the stored position and current position.",
-        "4. Otherwise store the current value and continue."
+        ...steps.slice(0, 4).map((step, index) => `${index + 1}. ${step}`),
+        "",
+        "### Edge check",
+        edgeCheck
       ].join("\n");
+
+    if (tags.includes("hash table")) {
+      if (hintLevel === 1) {
+        return levelOne(
+          "Notice whether each current value needs a matching earlier value to finish the answer. That points to remembering what you have already seen instead of scanning again.",
+          "Write the expression for the value you wish you had seen before the current element.",
+          "Can you decide the answer for `nums[i]` using only earlier elements?",
+          "need = target - nums[i]"
+        );
+      }
+      if (hintLevel === 2) {
+        return levelTwo(
+          "A lookup table fits because the question repeatedly asks whether a needed value already exists. The important detail is update order.",
+          [
+            "Create a map from value to the index where it appeared.",
+            "For each current value, compute the partner needed for a valid answer.",
+            "Check the map before adding the current value so you do not reuse the same element."
+          ],
+          "If the current value appears twice, does your code still avoid using the same index twice?"
+        );
+      }
+      return levelThree(
+        "Use one pass plus a lookup table so each number can immediately check whether its partner has already appeared.",
+        [
+          "Create a lookup table for values you have already seen.",
+          "Scan the input from left to right and compute the partner needed for the current value.",
+          "If that partner is already in the lookup table, use the stored position and the current position to form the answer.",
+          "Otherwise, store the current value with its position and continue."
+        ],
+        "Test a case with duplicate values so you know the lookup order is correct."
+      );
     }
 
     if ((tags.includes("math") || tags.includes("simulation")) && statement.includes("clock") && statement.includes("angle")) {
       if (hintLevel === 1) {
-        return [
-          "### Starting hint",
-          "Turn the clock into two separate angle formulas before comparing anything.",
-          "The hour hand is the subtle part because it moves continuously while the minutes pass.",
-          "",
-          "### Starter cue",
-          "`minuteAngle = 6 * minutes`, `hourAngle = 30 * (hour % 12) + 0.5 * minutes`"
-        ].join("\n");
+        return levelOne(
+          "Notice that both clock hands can be converted into angles from 12 o'clock. The hour hand also moves while minutes pass, so it is not just `30 * hour`.",
+          "Compute the minute angle and hour angle separately before comparing them.",
+          "Does your hour angle change when `minutes` changes?",
+          "minuteAngle = 6 * minutes; hourAngle = 30 * (hour % 12) + 0.5 * minutes"
+        );
       }
       if (hintLevel === 2) {
-        return [
-          "### Directional hint",
-          "Compute the two angles separately, then take their absolute difference.",
-          "Because the clock is circular, compare that difference with the wraparound gap as well.",
-          "",
-          "### Checkpoint",
+        return levelTwo(
+          "This is a formula problem: compute both hand angles, then handle the circular distance. The final comparison is between the direct gap and the wraparound gap.",
+          [
+            "Convert minutes to degrees using 6 degrees per minute.",
+            "Convert hours to degrees and add the extra minute movement.",
+            "Take the smaller of `diff` and `360 - diff`."
+          ],
           "Treat `12` like `0` on the clock face."
-        ].join("\n");
+        );
       }
-      return [
-        "### Algorithm hint",
-        "### Core idea",
-        "Compute each hand's angle directly, then return the smaller circular distance between them.",
-        "",
-        "### Steps",
-        "1. Convert the minute value into the minute-hand angle.",
-        "2. Convert the hour and minute values into the hour-hand angle, including the extra movement from the minutes.",
-        "3. Compute the absolute difference between the two angles.",
-        "4. Return the smaller value between that difference and the full-circle complement."
-      ].join("\n");
+      return levelThree(
+        "Turn the problem into two angle computations, then take the smaller circular distance between them.",
+        [
+          "Convert the minute value into the minute-hand angle.",
+          "Convert the hour and minute values into the hour-hand angle, including minute movement.",
+          "Compute the absolute difference between the two angles.",
+          "Return the smaller value between that difference and the full-circle complement."
+        ],
+        "Test `12:00`, because both hands should produce angle `0`."
+      );
     }
 
     if (tags.includes("two pointers")) {
       if (hintLevel === 1) {
-        return ["### Starting hint", "Think about what each pointer should represent before you move either one.", "", "### Starter cue", "`while left < right:`"].join("\n");
+        return levelOne(
+          "Notice whether the problem lets one comparison eliminate a group of impossible answers. That is the main reason two pointers may help.",
+          "Define what `left` and `right` represent before deciding how either pointer moves.",
+          "After one pointer move, which answers did you safely rule out?",
+          "while left < right:"
+        );
       }
       if (hintLevel === 2) {
-        return ["### Directional hint", "Decide what makes the left pointer move and what makes the right pointer move, then keep that rule consistent.", "", "### Checkpoint", "Every pointer move should eliminate one set of impossible answers."].join("\n");
+        return levelTwo(
+          "Two pointers fit when the current pair/window gives enough information to discard one side. The move rule must come from the problem's ordering, sum, window, or validity condition.",
+          [
+            "Initialize the pointers at the positions the pattern requires.",
+            "Evaluate the condition formed by the current pointer positions.",
+            "Move the pointer that discards impossible answers while preserving possible ones."
+          ],
+          "Every pointer move should have a reason; if it does not, the approach may be wrong."
+        );
       }
-      return [
-        "### Algorithm hint",
-        "### Core idea",
+      return levelThree(
         "Use two moving positions so each comparison removes unnecessary work instead of restarting a scan.",
-        "",
-        "### Steps",
-        "1. Initialize the two pointers at the positions the pattern requires.",
-        "2. Compare the current state formed by those pointers.",
-        "3. Move exactly one pointer according to the condition that discards impossible answers.",
-        "4. Stop when the pointers meet the condition that reveals the final answer."
-      ].join("\n");
+        [
+          "Initialize the two pointers at the positions the pattern requires.",
+          "Compare the current state formed by those pointers.",
+          "Move exactly one pointer according to the condition that discards impossible answers.",
+          "Stop when the pointers meet the condition that reveals the final answer."
+        ],
+        "Test a case where the best answer is near the start or end, not only in the middle."
+      );
     }
 
     if (tags.includes("binary search")) {
       if (hintLevel === 1) {
-        return ["### Starting hint", "Decide whether you are searching an index range or an answer range, then write the middle candidate formula.", "", "### Starter cue", "`mid = left + (right - left) // 2`"].join("\n");
+        return levelOne(
+          "Notice whether the problem has a sorted range, monotonic condition, or answer space where once something becomes true it stays true. That is the real reason binary search may apply.",
+          "Write down what `left` and `right` mean in this problem, then write the middle candidate.",
+          "If you test `mid`, can you prove which side can be discarded?",
+          "mid = left + (right - left) // 2"
+        );
       }
       if (hintLevel === 2) {
-        return ["### Directional hint", "The real decision is not the mid formula; it is the yes-or-no condition that tells you which half to discard.", "", "### Checkpoint", "Make sure every branch shrinks the search space."].join("\n");
+        return levelTwo(
+          "Binary search fits only if your check on `mid` is monotonic. The goal is to turn the problem into a yes/no test that safely eliminates half.",
+          [
+            "Define the meaning of the search bounds in words.",
+            "Write the condition that tests whether `mid` is too small, too large, or valid.",
+            "Update exactly one bound in each branch so the interval shrinks."
+          ],
+          "Can your loop get stuck when only two candidates remain?"
+        );
       }
-      return [
-        "### Algorithm hint",
-        "### Core idea",
-        "One test on the middle candidate should tell you which half of the remaining search space is still valid.",
-        "",
-        "### Steps",
-        "1. Set the low and high boundaries of the valid search space.",
-        "2. Repeatedly compute the middle candidate.",
-        "3. Evaluate the middle candidate and discard the invalid half of the search space.",
-        "4. Continue until the stopping condition gives the final answer."
-      ].join("\n");
+      return levelThree(
+        "Binary search works when one test on the middle candidate tells you which half of the remaining search space is still valid.",
+        [
+          "Set the low and high boundaries of the valid search space.",
+          "Compute the middle candidate each round.",
+          "Evaluate the middle candidate and discard the invalid half.",
+          "Stop when the bounds converge or the exact target is found, depending on the problem goal."
+        ],
+        "Test the smallest input and a case where the answer is at the boundary."
+      );
     }
 
     if (tags.includes("dynamic programming")) {
       if (hintLevel === 1) {
-        return ["### Starting hint", "Name one smaller subproblem whose answer helps build the full answer before you think about transitions.", "", "### Starter cue", "`dp[i] = best answer for the first i states/items`"].join("\n");
+        return levelOne(
+          "Notice whether the same smaller decisions repeat across the problem. DP starts by naming exactly what one saved answer means.",
+          "Before transitions, write a sentence for `dp[i]` or `dp[i][j]` in terms of the input.",
+          "Can you explain one DP cell without saying 'the answer so far' vaguely?",
+          "dp[i] = best answer using the first i positions/items"
+        );
       }
       if (hintLevel === 2) {
-        return ["### Directional hint", "Write the state first, then decide which earlier states are allowed to transition into it.", "", "### Checkpoint", "If you cannot explain the meaning of one DP cell in one sentence, the state is still too vague."].join("\n");
+        return levelTwo(
+          "DP fits when the answer for a larger prefix/state can be built from earlier states. The hard part is choosing a state that contains enough information but not too much.",
+          [
+            "Define the DP state in one precise sentence.",
+            "List the previous states that can transition into the current state.",
+            "Choose a fill order where those previous states are already computed."
+          ],
+          "If two different histories lead to the same DP state, do they need the same future information?"
+        );
       }
-      return [
-        "### Algorithm hint",
-        "### Core idea",
-        "Store answers for smaller states and reuse them instead of recomputing the same work.",
-        "",
-        "### Steps",
-        "1. Define the DP state so each entry has one clear meaning.",
-        "2. Write the transition using only earlier states that are already known.",
-        "3. Fill the states in dependency order.",
-        "4. Return the state that represents the full problem answer."
-      ].join("\n");
+      return levelThree(
+        "Store answers for smaller states and reuse them so repeated subproblems are solved once.",
+        [
+          "Define the DP state so each entry has one clear meaning.",
+          "Set the base cases from the smallest valid inputs.",
+          "Write the transition using only states that are already known.",
+          "Return the state that represents the complete input."
+        ],
+        "Test the smallest input because DP bugs usually start in base cases."
+      );
     }
 
     return hintLevel === 1
-      ? ["### Starting hint", "Identify the first quantity, state, or condition you can compute directly from the input.", "", "### Starter cue", "`track_the_state_you_need_before_the_next_step`"].join("\n")
+      ? levelOne(
+          "Identify the first quantity, state, or condition you can compute directly from the input. Then ask what information you wish you already knew before making the next decision.",
+          "Write down the repeated decision in the problem, then name the state that would make that decision easier.",
+          "After one element or step, what changes and what must stay remembered?",
+          "track_the_state_you_need_before_the_next_step"
+        )
       : hintLevel === 2
-        ? ["### Directional hint", "Focus on the repeated decision in the problem and decide what must be tracked so the next step becomes easier.", "", "### Checkpoint", "You should be able to explain what changes after each step and why."].join("\n")
-        : [
-            "### Algorithm hint",
-            "### Core idea",
-            "Find the minimum state or helper structure that removes repeated work, then process the input in the order that keeps that state useful.",
-            "",
-            "### Steps",
-            "1. Identify the exact state or helper structure you need to maintain.",
-            "2. Process the input in the order that makes earlier work reusable.",
-            "3. Update that state after each step according to the current element or condition.",
-            "4. Return the final value once the traversal or construction is complete."
-          ].join("\n");
+        ? levelTwo(
+            "Focus on the repeated decision in the problem and decide what must be tracked before moving forward. Once that tracked state is clear, the flow usually becomes one pass, ordered traversal, search, or DP.",
+            [
+              "State the repeated decision in plain English.",
+              "Choose the smallest state or helper structure that answers that decision.",
+              "Process the input in the order that keeps the state useful."
+            ],
+            "You should be able to explain what changes after every step and why that helps the next step."
+          )
+        : levelThree(
+            "Identify the minimum state or helper structure that removes repeated work, then process the input in the order that keeps that state useful.",
+            [
+              "Identify the exact state or helper structure you need to maintain.",
+              "Process the input in the order that makes earlier work reusable.",
+              "Update that state after each step according to the current element or condition.",
+              "Return the final value once the traversal, search, or construction is complete."
+            ],
+            "Test the smallest valid input and one case where the obvious greedy choice might fail."
+          );
   }
 }

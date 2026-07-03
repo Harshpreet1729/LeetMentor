@@ -85,7 +85,7 @@ query problemsetQuestionList($search: String!) {
 ASSISTANT_SYSTEM_PROMPT = """You are a student-friendly LeetCode DSA assistant.
 Your goal is to help students learn, not just copy answers.
 Always explain in simple language.
-If the student asks for a hint, give only a hint and do not reveal the full solution.
+If the student asks for a hint, coach them toward the next codeable move without revealing full code.
 If the student shares code, first identify what the code is trying to do, then find mistakes, then explain the fix.
 Never invent problem statements.
 Use only the provided problem context.
@@ -93,6 +93,13 @@ If context is missing, ask the student to provide the problem statement.
 Prefer C++ unless the student asks for another language.
 Keep explanations beginner-friendly and placement-focused.
 Be precise and concrete. Do not give generic advice when the code or problem context is available.
+
+Correctness rules:
+- Before choosing an approach, silently verify it against the problem goal, examples, constraints, and edge cases.
+- Do not choose an approach only because a tag suggests it; the hint must fit the actual statement.
+- Do not mention a different LeetCode problem, fake sample, fake constraint, or hidden rule.
+- If the context is incomplete or inconsistent, say what is missing and ask for the exact statement instead of guessing.
+- If you are not fully sure about the optimal approach, give a safe exploratory hint rather than a confident wrong algorithm.
 
 Response rules:
 - Start with the direct answer, not with filler.
@@ -107,16 +114,18 @@ Response rules:
 - Prefer compact answers over long essays.
 - Do not shame the student.
 - Do not overcomplicate beginner explanations.
-- Hints must help the student take the first real step, not just restate the idea in English.
-- For hint mode, stay short, specific, problem-aware, and never include full code.
-- For hint level 1, use the headings `### Starting hint` and `### Starter cue`. The starter cue must be exactly one short line in backticks that shows the first useful formula, expression, or variable setup.
-- For hint level 2, use the headings `### Directional hint` and `### Checkpoint`. Describe the approach flow and the next condition, update, or invariant the student should verify.
-- For hint level 3, use the headings `### Algorithm hint`, `### Core idea`, and `### Steps`. Give the actual solving plan with exactly 4 numbered steps. It is not a dry run and should not walk through sample values.
+- Hints must help the student write the next few lines themselves; avoid textbook theory.
+- In hint mode, never include full code, imports, library includes, class wrappers, or language-specific container declarations.
+- Starter cues must be tiny pseudocode or a single expression. Do not write `std::`, `#include`, `using namespace`, `class Solution`, `vector<...>`, `map<...>`, or any full variable declaration as a starter cue.
+- Every hint must contain at least one concrete next action, one self-check question or invariant, and one reason the direction fits the problem.
+- For hint level 1, use the headings `### Starting hint`, `### Try this next`, `### Self-check`, and `### Starter cue`.
+- For hint level 2, use the headings `### Directional hint`, `### Coding plan`, and `### Checkpoint`.
+- For hint level 3, use the headings `### Algorithm hint`, `### Core idea`, `### Steps`, and `### Edge check`. Give the actual solving plan with exactly 4 numbered steps. It is not a dry run and should not include full code.
 - For dry run mode, use the actual sample values from the problem whenever possible.
 - For complexity mode, analyze the student's code if it is present. If it is absent, clearly say you are assuming the standard approach."""
 
 MODE_GUIDANCE = {
-    "hint": "Give a progressive hint only. Respect hint level exactly. Make the hint actionable enough for the student to begin writing. Level 1 must include one tiny starter cue line in backticks. Level 3 must describe the solving algorithm, not a dry run. Do not use full code.",
+    "hint": "Give a progressive, practical coaching hint only. Ground it in the actual problem statement, examples, and constraints. Tell the student what to notice, what to try next, and how to check they are on track. Do not reveal full code.",
     "explain": "Explain only what the problem is asking. Clarify the goal, the important rules, one small example, and the subtle point students often miss. Do not give the algorithm, the direct solution steps, or code.",
     "debug": "Review the student's actual code. Identify the exact bug, explain why it fails on one concrete case, and show the corrected version in a fenced code block only if needed.",
     "complexity": "State the best target complexity for this exact problem, the likely brute-force worst complexity for this exact problem, and if the student pasted code, also estimate the current code complexity. Keep it short, specific, and complexity-focused only.",
@@ -245,14 +254,18 @@ class LeetCodeService:
         if self.problem_index_cache is not None:
             return self.problem_index_cache
 
-        request = urllib.request.Request(
-            ALL_PROBLEMS_ENDPOINT,
-            headers=self._default_headers(f"{LEETCODE_BASE_URL}/problemset/"),
-        )
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.URLError:
+            response = requests.get(
+                ALL_PROBLEMS_ENDPOINT,
+                headers=self._default_headers(f"{LEETCODE_BASE_URL}/problemset/"),
+                timeout=20,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException:
+            self.problem_index_cache = []
+            return self.problem_index_cache
+        except ValueError:
             self.problem_index_cache = []
             return self.problem_index_cache
 
@@ -433,22 +446,26 @@ class LeetCodeService:
 
     def _graphql_request(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
         url = os.environ.get("LEETCODE_GRAPHQL_URL", DEFAULT_GRAPHQL_URL)
-        request = urllib.request.Request(
-            url,
-            data=json.dumps({"query": query, "variables": variables}).encode("utf-8"),
-            headers={
-                **self._default_headers(LEETCODE_BASE_URL),
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as error:
-            raise ValueError(f"LeetCode request failed with status {error.code}.") from error
-        except urllib.error.URLError as error:
+            response = requests.post(
+                url,
+                json={"query": query, "variables": variables},
+                headers={
+                    **self._default_headers(LEETCODE_BASE_URL),
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+        except requests.RequestException as error:
             raise ValueError("Could not reach LeetCode. Check your internet connection and try again.") from error
+
+        if response.status_code >= 400:
+            raise ValueError(f"LeetCode request failed with status {response.status_code}.")
+
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise ValueError("LeetCode returned an invalid response.") from error
 
         errors = payload.get("errors") or []
         if errors:
@@ -539,14 +556,43 @@ class AIService:
     def _hint_shape_is_valid(self, answer: str, hint_level: int) -> bool:
         normalized = answer.lower()
         if hint_level == 1:
-            return "### starting hint" in normalized and "### starter cue" in normalized and "`" in answer
+            return (
+                "### starting hint" in normalized
+                and "### try this next" in normalized
+                and "### self-check" in normalized
+                and "### starter cue" in normalized
+                and "`" in answer
+                and not self._has_bad_starter_cue(answer)
+            )
         if hint_level == 2:
-            return "### directional hint" in normalized and "### checkpoint" in normalized
+            return (
+                "### directional hint" in normalized
+                and "### coding plan" in normalized
+                and "### checkpoint" in normalized
+            )
         return (
             "### algorithm hint" in normalized
             and "### core idea" in normalized
             and "### steps" in normalized
+            and "### edge check" in normalized
             and len(re.findall(r"^\d+\.\s", answer, flags=re.MULTILINE)) == 4
+        )
+
+    def _has_bad_starter_cue(self, answer: str) -> bool:
+        match = re.search(r"### starter cue\s+`([^`]+)`", answer, flags=re.IGNORECASE)
+        if not match:
+            return True
+
+        cue = match.group(1).strip()
+        if len(cue) > 90:
+            return True
+
+        return bool(
+            re.search(
+                r"(std\s*::|#include|using\s+namespace|class\s+solution|\b(?:vector|map|unordered_map|unordered_set|set|queue|stack|priority_queue)\s*<|\b(?:int|long|double|bool|string|auto|char)\s+\w+\s*[;=({])",
+                cue,
+                flags=re.IGNORECASE,
+            )
         )
 
     def _explanation_shape_is_valid(self, answer: str) -> bool:
@@ -684,6 +730,19 @@ class AIService:
             f"Student question: {payload.get('userQuestion')}" if payload.get("userQuestion") else "",
         ]
 
+        if mode == "hint":
+            pieces.append(
+                "\n".join(
+                    [
+                        "Hint safety checklist:",
+                        "- Match the exact title, statement, examples, and constraints below.",
+                        "- Verify the approach against the first example before answering.",
+                        "- Do not solve a different LeetCode question with a similar title.",
+                        "- Prefer a safe next coding move over a broad theory explanation.",
+                    ]
+                )
+            )
+
         if problem:
             pieces.append(
                 "\n".join(
@@ -713,28 +772,39 @@ class AIService:
                 return "\n".join([
                     "Use this exact section order:",
                     "### Starting hint",
-                    "Write 1 or 2 short sentences that tell the student the best first move for this exact problem.",
+                    "Write 2 short sentences: first, what to notice in this exact problem; second, why that observation points to the next move.",
+                    "### Try this next",
+                    "Write 1 concrete action the student can code or decide now. It must be specific to the problem, not generic advice.",
+                    "### Self-check",
+                    "Write 1 short question the student can ask to know whether the direction is correct.",
                     "### Starter cue",
                     "Write exactly 1 short line in backticks.",
-                    "The starter cue may be a formula, expression, or variable setup, but it must not be full code.",
+                    "The starter cue may be a formula, expression, loop condition, variable name, or invariant.",
+                    "Do not include `std::`, imports, library names, class wrappers, semicolons, or full type declarations in the starter cue.",
                 ])
             if hint_level == 2:
                 return "\n".join([
                     "Use this exact section order:",
                     "### Directional hint",
-                    "Write 2 to 4 short sentences that describe the approach flow and the key decisions.",
+                    "Write 2 to 3 short sentences naming the likely pattern and why it fits the given constraints/examples.",
+                    "### Coding plan",
+                    "Write exactly 3 numbered steps, using `1.`, `2.`, and `3.`.",
+                    "Each step must be one short action the student can code next, not a paragraph.",
+                    "Keep each step under 18 words and do not include full code.",
                     "### Checkpoint",
-                    "Write 1 short sentence about the next condition, update order, or invariant the student should verify.",
+                    "Write 1 short sentence about the condition, update order, invariant, or edge case the student should verify.",
                     "Do not include code.",
                 ])
             return "\n".join([
                 "Use this exact section order:",
                 "### Algorithm hint",
                 "### Core idea",
-                "Write 1 or 2 short sentences naming the state, structure, or pattern that solves the problem.",
+                "Write 1 or 2 short sentences naming the state, structure, or pattern that solves this exact problem and why.",
                 "### Steps",
                 "Then write exactly 4 numbered steps.",
                 "Each step must be plain English, problem-specific, and describe the solving algorithm instead of a dry run.",
+                "### Edge check",
+                "Write 1 edge case or sample condition the student should test after coding.",
                 "Do not include code.",
             ])
         if mode == "explain":
@@ -802,7 +872,7 @@ class AIService:
 
     def _suggest_next_step(self, mode: str) -> str:
         if mode == "hint":
-            return "Move to the next hint only if you still want more direction."
+            return "Code the hinted next step first; ask for the next hint only if that checkpoint still blocks you."
         if mode == "debug":
             return "Run the corrected logic on one more edge case."
         if mode == "complexity":
@@ -818,254 +888,279 @@ class AIService:
         statement = (problem.get("statement") or "").lower()
         example = self._extract_example_text(problem)
 
-        if "hash table" in tags:
-            if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    "Do one left-to-right pass and ask, for each value, what partner would complete the answer right now.",
-                    "Check for that partner before you store the current value.",
-                    "",
-                    "### Starter cue",
-                    "`need = target - nums[i]`",
-                ])
-            if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Keep a lookup from earlier values to their positions so each new value can ask for its partner instantly.",
-                    "The flow is: compute the needed partner, check the lookup, and only store the current value if the partner is not there yet.",
-                    "",
-                    "### Checkpoint",
-                    "Your update order matters: query first, insert second.",
-                ])
+        def level_one(notice: str, try_next: str, self_check: str, cue: str) -> str:
+            return "\n".join([
+                "### Starting hint",
+                notice,
+                "",
+                "### Try this next",
+                try_next,
+                "",
+                "### Self-check",
+                self_check,
+                "",
+                "### Starter cue",
+                f"`{cue}`",
+            ])
+
+        def level_two(direction: str, plan: list[str], checkpoint: str) -> str:
+            return "\n".join([
+                "### Directional hint",
+                direction,
+                "",
+                "### Coding plan",
+                *(f"{index}. {step}" for index, step in enumerate(plan[:3], start=1)),
+                "",
+                "### Checkpoint",
+                checkpoint,
+            ])
+
+        def level_three(core_idea: str, steps: list[str], edge_check: str) -> str:
             return "\n".join([
                 "### Algorithm hint",
                 "### Core idea",
-                "Use one pass plus a lookup table so each number can immediately check whether its partner has already appeared.",
+                core_idea,
                 "",
                 "### Steps",
-                "1. Create a lookup table for values you have already seen.",
-                "2. Scan the input from left to right and compute the partner needed for the current value.",
-                "3. If that partner is already in the lookup table, use the stored position and the current position to form the answer.",
-                "4. Otherwise, store the current value with its position and continue.",
+                *(f"{index}. {step}" for index, step in enumerate(steps[:4], start=1)),
+                "",
+                "### Edge check",
+                edge_check,
             ])
+
+        if "hash table" in tags:
+            if hint_level == 1:
+                return level_one(
+                    "Notice whether each current value needs a matching earlier value to finish the answer. That points to remembering what you have already seen instead of scanning again.",
+                    "Write the expression for the value you wish you had seen before the current element.",
+                    "Can you decide the answer for `nums[i]` using only earlier elements?",
+                    "need = target - nums[i]",
+                )
+            if hint_level == 2:
+                return level_two(
+                    "A lookup table fits because the question repeatedly asks whether a needed value already exists. The important detail is update order.",
+                    [
+                        "Create a map from value to the index where it appeared.",
+                        "For each current value, compute the partner needed for a valid answer.",
+                        "Check the map before adding the current value so you do not reuse the same element.",
+                    ],
+                    "If the current value appears twice, does your code still avoid using the same index twice?",
+                )
+            return level_three(
+                "Use one pass plus a lookup table so each number can immediately check whether its partner has already appeared.",
+                [
+                    "Create a lookup table for values you have already seen.",
+                    "Scan the input from left to right and compute the partner needed for the current value.",
+                    "If that partner is already in the lookup table, use the stored position and the current position to form the answer.",
+                    "Otherwise, store the current value with its position and continue.",
+                ],
+                "Test a case with duplicate values so you know the lookup order is correct.",
+            )
 
         if "two pointers" in tags and "linked list" in tags:
             if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    "Work directly on the linked list instead of copying values out first.",
-                    "Find the important node with moving pointers before you change any links.",
-                    "",
-                    "### Starter cue",
-                    "`while fast and fast.next:`",
-                ])
+                return level_one(
+                    "Notice that the answer depends on a position inside the linked list, not on sorting or random access. You need pointers that reveal that position while preserving the links.",
+                    "Decide what `slow`, `fast`, and possibly `prev` should mean before changing any `next` pointer.",
+                    "When the loop stops, which pointer is on the node you must edit or remove?",
+                    "while fast and fast.next:",
+                )
             if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Move one pointer slowly and one quickly so the slow pointer lands on the node you care about at the correct time.",
-                    "Keep track of the node just before `slow`, because that is the link you will update when the target is found.",
-                    "",
-                    "### Checkpoint",
-                    "Decide the exact loop stop condition before you reconnect any pointers.",
-                ])
-            return "\n".join([
-                "### Algorithm hint",
-                "### Core idea",
-                "Two pointers let you locate the target node in one traversal, and a previous pointer lets you reconnect the list cleanly.",
-                "",
-                "### Steps",
-                "1. Initialize slow and fast pointers at the head and also keep a previous pointer for the slow pointer.",
-                "2. Move slow by one step and fast by two steps until fast reaches the end condition for the target node.",
-                "3. Once slow is on the node to remove, reconnect the previous node so it skips the slow node.",
-                "4. Return the head of the updated linked list.",
-            ])
+                return level_two(
+                    "Two pointers fit because one pointer can measure progress while the other lands on the important node. Keep a previous pointer if the final operation needs relinking.",
+                    [
+                        "Initialize the pointers so their distance or speed difference matches the target position.",
+                        "Move them together until the fast pointer reaches the chosen stop condition.",
+                        "Use the slow pointer and previous pointer to perform the link update.",
+                    ],
+                    "Before reconnecting links, confirm what happens when the head itself is the target.",
+                )
+            return level_three(
+                "Use two pointers to locate the target node in one traversal, then update the surrounding link cleanly.",
+                [
+                    "Initialize the pointer setup required by the position you need to find.",
+                    "Move the pointers until the fast pointer reaches the stop condition that proves slow is correctly placed.",
+                    "Use the pointer before the target to reconnect the list around the target node.",
+                    "Return the correct head, including the case where the original head changed.",
+                ],
+                "Test a one-node list or a case where the head is removed.",
+            )
 
         if "binary search" in tags:
             if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    "First decide what the search space is: an index range or an answer range.",
-                    "Then write the middle candidate you will test each round.",
-                    "",
-                    "### Starter cue",
-                    "`mid = left + (right - left) // 2`",
-                ])
+                return level_one(
+                    "Notice whether the problem has a sorted range, monotonic condition, or answer space where once something becomes true it stays true. That is the real reason binary search may apply.",
+                    "Write down what `left` and `right` mean in this problem, then write the middle candidate.",
+                    "If you test `mid`, can you prove which side can be discarded?",
+                    "mid = left + (right - left) // 2",
+                )
             if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Each round should test the middle candidate and use the result to discard one half safely.",
-                    "The real decision is not the mid formula; it is the condition that proves the answer must lie on one side.",
-                    "",
-                    "### Checkpoint",
-                    "Make sure every branch shrinks the search range, otherwise the loop can stall.",
-                ])
-            return "\n".join([
-                "### Algorithm hint",
-                "### Core idea",
-                "Binary search works because one test on the middle candidate tells you which half of the remaining search space is still valid.",
-                "",
-                "### Steps",
-                "1. Set the low and high boundaries of the valid search space.",
-                "2. Repeatedly compute the middle candidate.",
-                "3. Evaluate the middle candidate and use the result to discard one half of the search space.",
-                "4. Continue until the stopping condition gives you the final answer.",
-            ])
+                return level_two(
+                    "Binary search fits only if your check on `mid` is monotonic. The goal is to turn the problem into a yes/no test that safely eliminates half.",
+                    [
+                        "Define the meaning of the search bounds in words.",
+                        "Write the condition that tests whether `mid` is too small, too large, or valid.",
+                        "Update exactly one bound in each branch so the interval shrinks.",
+                    ],
+                    "Can your loop get stuck when only two candidates remain?",
+                )
+            return level_three(
+                "Binary search works when one test on the middle candidate tells you which half of the remaining search space is still valid.",
+                [
+                    "Set the low and high boundaries of the valid search space.",
+                    "Compute the middle candidate each round.",
+                    "Evaluate the middle candidate and discard the invalid half.",
+                    "Stop when the bounds converge or the exact target is found, depending on the problem goal.",
+                ],
+                "Test the smallest input and a case where the answer is at the boundary.",
+            )
 
         if "dynamic programming" in tags:
             if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    "Start by defining one smaller subproblem whose answer helps build the full answer.",
-                    "Ask what result you want `dp[i]` to mean before you think about transitions.",
-                    "",
-                    "### Starter cue",
-                    "`dp[i] = best answer for the first i positions/items`",
-                ])
+                return level_one(
+                    "Notice whether the same smaller decisions repeat across the problem. DP starts by naming exactly what one saved answer means.",
+                    "Before transitions, write a sentence for `dp[i]` or `dp[i][j]` in terms of the input.",
+                    "Can you explain one DP cell without saying 'the answer so far' vaguely?",
+                    "dp[i] = best answer using the first i positions/items",
+                )
             if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Write the DP state first, then list which earlier states are allowed to transition into it.",
-                    "After that, pick a fill order where those earlier states are already solved when you need them.",
-                    "",
-                    "### Checkpoint",
-                    "If you cannot explain the meaning of one DP cell in one sentence, the state is still too vague.",
-                ])
-            return "\n".join([
-                "### Algorithm hint",
-                "### Core idea",
-                "DP solves the problem by storing answers for smaller states and reusing them instead of recomputing the same work.",
-                "",
-                "### Steps",
-                "1. Define the DP state so each entry has one clear meaning.",
-                "2. Write the transition using only earlier states that are already known.",
-                "3. Fill the states in dependency order from smallest to largest.",
-                "4. Return the state that represents the full problem answer.",
-            ])
+                return level_two(
+                    "DP fits when the answer for a larger prefix/state can be built from earlier states. The hard part is choosing a state that contains enough information but not too much.",
+                    [
+                        "Define the DP state in one precise sentence.",
+                        "List the previous states that can transition into the current state.",
+                        "Choose a fill order where those previous states are already computed.",
+                    ],
+                    "If two different histories lead to the same DP state, do they need the same future information?",
+                )
+            return level_three(
+                "Store answers for smaller states and reuse them so repeated subproblems are solved once.",
+                [
+                    "Define the DP state so each entry has one clear meaning.",
+                    "Set the base cases from the smallest valid inputs.",
+                    "Write the transition using only states that are already known.",
+                    "Return the state that represents the complete input.",
+                ],
+                "Test the smallest input because DP bugs usually start in base cases.",
+            )
 
         if "graph" in tags or "breadth-first search" in tags or "depth-first search" in tags:
             if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    f"Treat {title} as a state exploration problem and decide what one node or one state actually represents.",
-                    "Once the state is clear, the traversal choice becomes much easier.",
-                    "",
-                    "### Starter cue",
-                    "`visited.add(state)`",
-                ])
+                return level_one(
+                    f"Notice what a single state represents in {title}: a node, position, index, mask, or configuration. Once the state is clear, traversal becomes much less mysterious.",
+                    "Write what counts as a neighbor from one state before choosing BFS or DFS.",
+                    "Could the same state be reached twice? If yes, what identifies it uniquely?",
+                    "visited.add(state)",
+                )
             if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Build the neighbor relation first, then traverse while marking visited states early so work is not repeated.",
-                    "Use BFS when shortest distance or minimum steps matter, and DFS when full exploration is enough.",
-                    "",
-                    "### Checkpoint",
-                    "Choose exactly when a state becomes visited: on push/enqueue or on pop/dequeue, then stay consistent.",
-                ])
-            return "\n".join([
-                "### Algorithm hint",
-                "### Core idea",
-                "Model the valid positions or conditions as states and traverse them once while preventing revisits.",
-                "",
-                "### Steps",
-                "1. Model the valid positions or conditions as graph states.",
-                "2. Build or generate the neighbors reachable from each state.",
-                "3. Traverse the states while marking visited ones so each state is processed once.",
-                "4. Return the answer collected from the traversal result that matches the problem goal.",
-            ])
+                return level_two(
+                    "Graph traversal fits when the problem is about moving between valid states. Use BFS for shortest steps and DFS for reachability or full exploration.",
+                    [
+                        "Define the state and how to generate its neighbors.",
+                        "Initialize the queue or stack with the starting state.",
+                        "Mark visited states consistently so cycles or repeated paths do not explode.",
+                    ],
+                    "Mark a state when you enqueue/push it unless the problem specifically needs a different timing.",
+                )
+            return level_three(
+                "Model valid positions or configurations as states, then traverse each reachable state once.",
+                [
+                    "Define what one state contains.",
+                    "Generate all valid neighbors from that state.",
+                    "Traverse with BFS or DFS while preventing revisits.",
+                    "Return the distance, count, or found condition required by the problem.",
+                ],
+                "Test a case with a cycle, blocked move, or repeated state.",
+            )
 
         if "math" in tags or "geometry" in tags or "simulation" in tags:
             if "clock" in statement and "angle" in statement:
                 if hint_level == 1:
-                    return "\n".join([
-                        "### Starting hint",
-                        "Convert the clock into two separate angle formulas before you think about the final comparison.",
-                        "The hour hand is the subtle part because it keeps moving while the minutes pass.",
-                        "",
-                        "### Starter cue",
-                        "`minute_angle = 6 * minutes`, `hour_angle = 30 * (hour % 12) + 0.5 * minutes`",
-                    ])
+                    return level_one(
+                        "Notice that both clock hands can be converted into angles from 12 o'clock. The hour hand also moves while minutes pass, so it is not just `30 * hour`.",
+                        "Compute the minute angle and hour angle separately before comparing them.",
+                        "Does your hour angle change when `minutes` changes?",
+                        "minute_angle = 6 * minutes; hour_angle = 30 * (hour % 12) + 0.5 * minutes",
+                    )
                 if hint_level == 2:
-                    return "\n".join([
-                        "### Directional hint",
-                        "Compute the minute-hand angle and the hour-hand angle separately, then compare them with an absolute difference.",
-                        "Because the clock is circular, the final answer is the smaller of the direct gap and the wraparound gap.",
-                        "",
-                        "### Checkpoint",
-                        "Do not forget that `12` behaves like `0` on the clock face.",
-                    ])
-                return "\n".join([
-                    "### Algorithm hint",
-                    "### Core idea",
+                    return level_two(
+                        "This is a formula problem: compute both hand angles, then handle the circular distance. The final comparison is between the direct gap and the wraparound gap.",
+                        [
+                            "Convert minutes to degrees using 6 degrees per minute.",
+                            "Convert hours to degrees and add the extra minute movement.",
+                            "Take the smaller of `diff` and `360 - diff`.",
+                        ],
+                        "Treat `12` like `0` on the clock face.",
+                    )
+                return level_three(
                     "Turn the problem into two angle computations, then take the smaller circular distance between them.",
-                    "",
-                    "### Steps",
-                    "1. Convert the minute value into the minute-hand angle using how many degrees it moves per minute.",
-                    "2. Convert the hour and minute values into the hour-hand angle, including the extra movement caused by the minutes.",
-                    "3. Compute the absolute difference between the two angles.",
-                    "4. Return the smaller value between that difference and the full-circle complement.",
-                ])
+                    [
+                        "Convert the minute value into the minute-hand angle.",
+                        "Convert the hour and minute values into the hour-hand angle, including minute movement.",
+                        "Compute the absolute difference between the two angles.",
+                        "Return the smaller value between that difference and the full-circle complement.",
+                    ],
+                    "Test `12:00`, because both hands should produce angle `0`.",
+                )
 
             if hint_level == 1:
-                return "\n".join([
-                    "### Starting hint",
-                    "Write the direct quantity you can compute first instead of trying to reason about the full answer verbally.",
-                    "Math and simulation problems usually become easier once each piece has its own formula or update rule.",
-                    "",
-                    "### Starter cue",
-                    "`value_after_step = previous_value + current_contribution`",
-                ])
+                return level_one(
+                    "Notice which quantities actually change and which are fixed by the input. Math and simulation problems become easier when each changing quantity gets its own formula or update rule.",
+                    "Name the first value you can compute directly from the input before combining everything.",
+                    "Are all quantities using the same units and indexing convention?",
+                    "value_after_step = previous_value + current_contribution",
+                )
             if hint_level == 2:
-                return "\n".join([
-                    "### Directional hint",
-                    "Break the problem into the few quantities that change, compute each one separately, and combine them only at the end.",
-                    "If the answer wraps around, repeats, or depends on units, handle that adjustment after the main calculation.",
-                    "",
-                    "### Checkpoint",
-                    "Make sure every formula uses the correct unit and rate of change.",
-                ])
-            return "\n".join([
-                "### Algorithm hint",
-                "### Core idea",
+                return level_two(
+                    "Break the problem into the few quantities that change, compute each separately, and combine them at the end. Handle wraparound, bounds, or formatting after the main calculation.",
+                    [
+                        "List the changing quantities and their starting values.",
+                        "Write the update rule for one step or one input item.",
+                        "Apply the final adjustment requested by the statement.",
+                    ],
+                    "Check units, indexing, and whether the answer needs min/max or wraparound handling.",
+                )
+            return level_three(
                 "Compute the core quantities directly from the input, then apply the final comparison or adjustment the statement requires.",
-                "",
-                "### Steps",
-                "1. Identify the exact values or measurements that can be computed directly from the input.",
-                "2. Write the formula or update rule for each value separately.",
-                "3. Combine those computed values to produce the raw answer.",
-                "4. Apply any final minimization, wraparound, or formatting rule from the statement before returning the result.",
-            ])
+                [
+                    "Identify the exact values that can be computed directly from the input.",
+                    "Write the formula or update rule for each value separately.",
+                    "Combine those values to produce the raw answer.",
+                    "Apply any final minimization, wraparound, or formatting rule before returning.",
+                ],
+                "Test a boundary value such as zero, one item, or a maximum/minimum input.",
+            )
 
         if hint_level == 1:
             starting_line = f"Start by restating what one step of progress looks like in {title}."
             if example:
                 starting_line += f" Use the first sample as your guide: {example}"
-            return "\n".join([
-                "### Starting hint",
-                f"{starting_line} Ask what information you need to keep after each step so the next step becomes easier.",
-                "",
-                "### Starter cue",
-                "`track_the_state_you_wish_you_knew_before_the_next_step`",
-            ])
+            return level_one(
+                f"{starting_line} Then ask what information you wish you already knew before making the next decision.",
+                "Write down the repeated decision in the problem, then name the state that would make that decision easier.",
+                "After one element or step, what changes and what must stay remembered?",
+                "track_the_state_you_need_before_the_next_step",
+            )
         if hint_level == 2:
-            return "\n".join([
-                "### Directional hint",
-                "Focus on the repeated decision in the problem and decide what should be tracked before moving forward.",
-                "Once that tracked state is clear, the rest of the flow usually becomes one pass or one ordered traversal.",
-                "",
-                "### Checkpoint",
-                "You should be able to say what changes after every step and why that change helps the next step.",
-            ])
-        return "\n".join([
-            "### Algorithm hint",
-            "### Core idea",
+            return level_two(
+                "Focus on the repeated decision in the problem and decide what must be tracked before moving forward. Once that tracked state is clear, the flow usually becomes one pass, ordered traversal, search, or DP.",
+                [
+                    "State the repeated decision in plain English.",
+                    "Choose the smallest state or helper structure that answers that decision.",
+                    "Process the input in the order that keeps the state useful.",
+                ],
+                "You should be able to explain what changes after every step and why that helps the next step.",
+            )
+        return level_three(
             "Identify the minimum state or helper structure that removes repeated work, then process the input in the order that keeps that state useful.",
-            "",
-            "### Steps",
-            "1. Identify the exact state or helper structure you need to maintain.",
-            "2. Process the input in the order that keeps previously computed information useful.",
-            "3. Update that state after each step according to the current element or condition.",
-            "4. Return the final value once the full traversal or construction is complete.",
-        ])
+            [
+                "Identify the exact state or helper structure you need to maintain.",
+                "Process the input in the order that makes earlier work reusable.",
+                "Update that state after each step according to the current element or condition.",
+                "Return the final value once the traversal, search, or construction is complete.",
+            ],
+            "Test the smallest valid input and one case where the obvious greedy choice might fail.",
+        )
 
     def _generate_concise_explanation(self, problem: dict[str, Any] | None) -> str | None:
         if not problem:
@@ -1139,7 +1234,7 @@ class AIService:
 
     def _max_tokens_for_mode(self, mode: str) -> int:
         if mode == "hint":
-            return 240
+            return 420
         if mode == "explain":
             return 220
         if mode == "complexity":
@@ -1288,7 +1383,7 @@ class AIService:
             return (
                 r"\( O(n) \)",
                 r"\( O(h) \)",
-                "A clean traversal usually visits each node once, with recursion stack or explicit stack height \( h \).",
+                r"A clean traversal usually visits each node once, with recursion stack or explicit stack height \( h \).",
                 r"\( O(n^2) \)",
                 r"\( O(h) \)",
                 "Repeated subtree recomputation can turn tree problems quadratic.",
