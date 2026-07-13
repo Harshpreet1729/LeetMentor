@@ -185,8 +185,8 @@ function PopupApp() {
       <div className="assistant-card mt-5 p-5">
         <p className="assistant-section-label">Current Preferences</p>
         <p className="mt-3 text-sm text-slate-300">Language: {preferences?.language ?? "C++"}</p>
-        <p className="mt-1 text-sm text-slate-300">Theme: {preferences?.theme ?? "system"}</p>
-        <p className="mt-1 text-sm text-slate-300">Model: {preferences?.model ?? "llama-3.3-70b-versatile"}</p>
+        <p className="mt-1 text-sm text-slate-300">Appearance: Dark editor theme</p>
+        <p className="mt-1 text-sm text-slate-300">Model: Managed by the backend</p>
         <button
           type="button"
           onClick={() => chrome.runtime.openOptionsPage()}

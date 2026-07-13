@@ -12,6 +12,24 @@ type AssistantRequestMessage =
 interface EditorSnapshotState {
   code: string;
   language: SupportedLanguage | null;
+  isLikelyPartial: boolean;
+}
+
+function problemFingerprint(problem: ProblemContext | null): string {
+  if (!problem) {
+    return "";
+  }
+
+  return JSON.stringify([
+    problem.titleSlug,
+    problem.title,
+    problem.questionFrontendId,
+    problem.difficulty,
+    problem.tags,
+    problem.statement,
+    problem.examples,
+    problem.constraints
+  ]);
 }
 
 async function mountAssistant() {
@@ -43,25 +61,46 @@ async function mountAssistant() {
     const [problem, setProblem] = React.useState<ProblemContext | null>(extractProblemFromPage());
     const [editorSnapshot, setEditorSnapshot] = React.useState<EditorSnapshotState>({
       code: "",
-      language: null
+      language: null,
+      isLikelyPartial: false
     });
     const latestProblemRef = React.useRef(problem);
 
     const refreshEditorSnapshot = React.useCallback(async () => {
       const snapshot = await extractLiveEditorSnapshotFromPage();
-      setEditorSnapshot(snapshot);
+      setEditorSnapshot((previous) =>
+        previous.code === snapshot.code &&
+        previous.language === snapshot.language &&
+        previous.isLikelyPartial === snapshot.isLikelyPartial
+          ? previous
+          : snapshot
+      );
       return snapshot;
     }, []);
 
     React.useEffect(() => {
       void refreshEditorSnapshot();
 
+      let refreshTimer: number | undefined;
+      const refreshProblem = () => {
+        const nextProblem = extractProblemFromPage();
+        if (problemFingerprint(latestProblemRef.current) === problemFingerprint(nextProblem)) {
+          return;
+        }
+
+        latestProblemRef.current = nextProblem;
+        setProblem(nextProblem);
+      };
       const observer = new MutationObserver(() => {
-        setProblem(extractProblemFromPage());
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(refreshProblem, 300);
       });
 
       observer.observe(document.body, { childList: true, subtree: true });
-      return () => observer.disconnect();
+      return () => {
+        window.clearTimeout(refreshTimer);
+        observer.disconnect();
+      };
     }, [refreshEditorSnapshot]);
 
     React.useEffect(() => {
@@ -95,7 +134,8 @@ async function mountAssistant() {
               isProblemPage: /\/problems\//.test(window.location.pathname),
               problem: latestProblemRef.current,
               editorCode: snapshot.code,
-              editorLanguage: snapshot.language
+              editorLanguage: snapshot.language,
+              editorCodeIsLikelyPartial: snapshot.isLikelyPartial
             });
           })();
           return true;
@@ -119,7 +159,14 @@ async function mountAssistant() {
     return (
       <>
         <FloatingAssistantButton isOpen={isOpen} onToggle={() => setIsOpen((previous) => !previous)} />
-        {isOpen ? <AssistantSidebar currentProblem={problem} liveCode={editorSnapshot.code} detectedLanguage={editorSnapshot.language} /> : null}
+        {isOpen ? (
+          <AssistantSidebar
+            currentProblem={problem}
+            liveCode={editorSnapshot.code}
+            liveCodeIsLikelyPartial={editorSnapshot.isLikelyPartial}
+            detectedLanguage={editorSnapshot.language}
+          />
+        ) : null}
       </>
     );
   }

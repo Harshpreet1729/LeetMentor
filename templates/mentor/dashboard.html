@@ -4,7 +4,7 @@
 {% block title %}LeetMentor Workspace{% endblock %}
 
 {% block extra_head %}
-  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20260628-refined-1" />
+  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20260713-study-1" />
 {% endblock %}
 
 {% block content %}
@@ -51,6 +51,84 @@
           <h2>Current session</h2>
         </div>
         <p id="workspaceProblemMeta" class="session-panel__body">Load a problem to begin a guided practice session.</p>
+      </article>
+
+      <article class="panel panel--compact study-card" aria-labelledby="studyCardTitle">
+        <div class="panel__header">
+          <div>
+            <h2 id="studyCardTitle">Learning review</h2>
+            <p class="panel__subcopy">Capture the lesson while it is fresh.</p>
+          </div>
+        </div>
+
+        <div class="study-form">
+          <div class="study-field">
+            <label class="field-label" for="studyStatus">Progress</label>
+            <select id="studyStatus" class="input study-input" disabled>
+              <option value="started">Started</option>
+              <option value="understood">Understood</option>
+              <option value="brute_force">Brute force found</option>
+              <option value="solved">Solved</option>
+              <option value="optimized">Optimized</option>
+              <option value="mastered">Mastered</option>
+            </select>
+          </div>
+
+          <div class="study-field">
+            <label class="field-label" for="studyConfidence">Confidence</label>
+            <select id="studyConfidence" class="input study-input" disabled>
+              <option value="1">1 — Need guidance</option>
+              <option value="2">2 — Still unsure</option>
+              <option value="3" selected>3 — Getting there</option>
+              <option value="4">4 — Confident</option>
+              <option value="5">5 — Could teach it</option>
+            </select>
+          </div>
+
+          <div class="study-field">
+            <label class="field-label" for="studyMistakeCategory">Main mistake</label>
+            <select id="studyMistakeCategory" class="input study-input" disabled>
+              <option value="">Choose a category</option>
+              <option value="problem_understanding">Problem understanding</option>
+              <option value="edge_case">Edge case</option>
+              <option value="algorithm_choice">Algorithm choice</option>
+              <option value="implementation">Implementation</option>
+              <option value="complexity">Complexity</option>
+              <option value="none">No major mistake</option>
+            </select>
+          </div>
+
+          <div class="study-field">
+            <label class="field-label" for="studyReflection">Reflection</label>
+            <textarea
+              id="studyReflection"
+              class="input study-reflection"
+              rows="4"
+              maxlength="4000"
+              disabled
+              placeholder="What did you miss, and what will you try first next time?"
+            ></textarea>
+          </div>
+
+          <button id="saveStudyBtn" class="button button--primary study-save-button" type="button" disabled>Save learning review</button>
+          <p id="studySaveStatus" class="study-save-status" role="status" aria-live="polite">Load a problem to save a review.</p>
+          <p id="studyNextReview" class="study-next-review">Your next revision date will appear here.</p>
+        </div>
+      </article>
+
+      <article class="panel panel--compact review-card" aria-labelledby="reviewQueueTitle">
+        <div class="panel__header">
+          <div>
+            <h2 id="reviewQueueTitle">Revision queue</h2>
+            <p class="panel__subcopy">Revisit problems before the pattern fades.</p>
+          </div>
+        </div>
+        <div id="reviewQueue" class="review-queue" aria-label="Revision queue">
+          <div class="review-queue__empty">
+            <strong>No revisions due yet.</strong>
+            <p>Saved learning reviews will schedule the problems that need another attempt.</p>
+          </div>
+        </div>
       </article>
 
       <article class="panel" id="problem-context">
@@ -109,13 +187,13 @@
             <p class="panel__subcopy">Keep your own reasoning in the driver seat.</p>
           </div>
           <div class="toolbar">
-            <select id="languageSelect" class="input input--select">
+            <select id="languageSelect" class="input input--select" aria-label="Programming language">
               <option>C++</option>
               <option>Python</option>
               <option>Java</option>
               <option>JavaScript</option>
             </select>
-            <select id="hintLevelSelect" class="input input--select">
+            <select id="hintLevelSelect" class="input input--select" aria-label="Hint level">
               <option value="1">Starting hint</option>
               <option value="2">Directional hint</option>
               <option value="3">Algorithm hint</option>
@@ -133,7 +211,7 @@
             </div>
             <span id="editorFilename">solution.cpp</span>
           </div>
-          <textarea id="codeInput" class="code-editor" spellcheck="false" placeholder="// Write or paste your solution here"></textarea>
+          <textarea id="codeInput" class="code-editor" spellcheck="false" aria-label="Solution code" placeholder="// Write or paste your solution here"></textarea>
         </div>
 
         <p id="editorAutosave" class="helper-text">Autosave idle</p>
@@ -181,6 +259,18 @@
             </button>
           </div>
 
+          <div class="mentor-focus">
+            <label class="field-label" for="questionInput">What are you stuck on?</label>
+            <textarea
+              id="questionInput"
+              class="input mentor-focus__input"
+              rows="3"
+              maxlength="4000"
+              placeholder="Optional: point the mentor at a failing case, confusing rule, or specific line."
+            ></textarea>
+            <p id="noteAutosave" class="helper-text">Your focus note is saved locally.</p>
+          </div>
+
           <div class="action-external">
             <p class="action-subtitle">External tools</p>
             <div class="action-grid action-grid--external">
@@ -196,17 +286,20 @@
             <div class="action-grid action-grid--advanced">
               <button class="button button--mode button--subtle" data-mode="complexity" type="button">Complexity</button>
               <button class="button button--mode button--subtle" data-mode="dry_run" type="button">Dry run</button>
+              <button class="button button--mode button--subtle" data-mode="optimize" type="button">Optimize approach</button>
             </div>
           </details>
+          <p class="helper-text mentor-shortcut">Tip: press <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run the selected action.</p>
         </div>
 
-        <div class="mentor-response" id="mentorResponsePanel" tabindex="-1">
+        <div class="mentor-response" id="mentorResponsePanel" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="mentorResponseTitle" aria-hidden="true">
           <div class="panel__header">
             <div>
-              <h2>Mentor output</h2>
+              <h2 id="mentorResponseTitle">Mentor output</h2>
               <p class="panel__subcopy">Your explanation, review, or dry run appears here.</p>
             </div>
             <div class="mentor-response__actions">
+              <button id="copyOutputBtn" class="button button--ghost" type="button">Copy</button>
               <button id="clearOutputBtn" class="button button--ghost" type="button">Clear</button>
               <button id="closeOutputBtn" class="button button--ghost button--compact hidden" type="button">Close</button>
             </div>
@@ -227,5 +320,5 @@
 {% endblock %}
 
 {% block extra_js %}
-  <script src="{% static 'mentor/app.js' %}?v=20260628-refined-1"></script>
+  <script src="{% static 'mentor/app.js' %}?v=20260713-study-1"></script>
 {% endblock %}
