@@ -6,13 +6,18 @@
     autosaveTimer: null,
     serverWakePromise: null,
     lastHiddenAt: 0,
-    lastWakeCheckAt: 0
+    lastWakeCheckAt: 0,
+    activeLanguage: "C++",
+    responseTrigger: null,
+    lastAssistantText: "",
+    studyLoadVersion: 0,
+    studySaving: false
   };
   const SERVER_WAKE_TIMEOUT_MS = 90000;
   const SERVER_WAKE_RETRY_DELAY_MS = 3000;
   const SERVER_IDLE_THRESHOLD_MS = 4 * 60 * 1000;
   const storageKeys = {
-    code: "leetmentor.code",
+    legacyCode: "leetmentor.code",
     note: "leetmentor.note",
     language: "leetmentor.language",
     hintLevel: "leetmentor.hintLevel",
@@ -52,8 +57,17 @@
     assistantStatus: byId("assistantStatus"),
     assistantOutput: byId("assistantOutput"),
     nextStep: byId("nextStep"),
+    studyStatus: byId("studyStatus"),
+    studyConfidence: byId("studyConfidence"),
+    studyMistakeCategory: byId("studyMistakeCategory"),
+    studyReflection: byId("studyReflection"),
+    saveStudyBtn: byId("saveStudyBtn"),
+    studySaveStatus: byId("studySaveStatus"),
+    studyNextReview: byId("studyNextReview"),
+    reviewQueue: byId("reviewQueue"),
     askChatgptBtn: byId("askChatgptBtn"),
     youtubeSearchBtn: byId("youtubeSearchBtn"),
+    copyOutputBtn: byId("copyOutputBtn"),
     clearOutputBtn: byId("clearOutputBtn"),
     closeOutputBtn: byId("closeOutputBtn"),
     modeButtons: Array.from(document.querySelectorAll("[data-mode]"))
@@ -114,6 +128,11 @@
       return;
     }
 
+    const wasOpen = isResponsePopoverOpen();
+    if (isOpen && !wasOpen) {
+      state.responseTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+
     els.mentorShell.classList.toggle("mentor-shell--response-open", isOpen);
     document.body.classList.toggle("mentor-response-is-open", isOpen);
     setHidden(els.closeOutputBtn, !isOpen);
@@ -131,6 +150,10 @@
           els.mentorResponsePanel.focus({ preventScroll: true });
         }
       });
+    } else if (wasOpen && state.responseTrigger) {
+      const trigger = state.responseTrigger;
+      state.responseTrigger = null;
+      window.requestAnimationFrame(() => trigger.focus({ preventScroll: true }));
     }
   }
 
@@ -225,7 +248,7 @@
           return `<blockquote>${renderInlineMarkdown(cleaned.replace(/^>\s?/, ""))}</blockquote>`;
         }
         if (cleaned.startsWith("\\[") && cleaned.endsWith("\\]")) {
-          return `<div class="math-block">${cleaned}</div>`;
+          return `<div class="math-block">${escapeHtml(cleaned)}</div>`;
         }
 
         const lines = cleaned.split("\n").map((line) => line.trim()).filter(Boolean);
@@ -243,6 +266,7 @@
 
   function renderAssistantOutput(text) {
     const source = normalizeAssistantText(text);
+    state.lastAssistantText = String(text || "");
     if (!source) {
       els.assistantOutput.innerHTML = "<p>No answer yet.</p>";
       return;
@@ -366,8 +390,36 @@
     els.problemStatementPreview.innerHTML = renderTechnicalInline(problemPreviewText(problem));
   }
 
+  function draftStorageKey(problem, language) {
+    const slug = problem?.titleSlug || "scratchpad";
+    return `leetmentor.draft.v2.${encodeURIComponent(slug)}.${encodeURIComponent(language || "C++")}`;
+  }
+
+  function saveDraftFor(problem, language, code) {
+    localStorage.setItem(draftStorageKey(problem, language), code);
+  }
+
+  function restoreDraftFor(problem, language, options = {}) {
+    const key = draftStorageKey(problem, language);
+    let draft = localStorage.getItem(key);
+    if (draft === null && typeof options.legacyDraft === "string") {
+      draft = options.legacyDraft;
+      localStorage.setItem(key, draft);
+    }
+
+    els.codeInput.value = draft ?? "";
+    if (els.editorAutosave) {
+      setText(
+        els.editorAutosave,
+        draft === null
+          ? `Fresh ${language} draft for this problem`
+          : `Restored saved ${language} draft for this problem`
+      );
+    }
+  }
+
   function saveWorkspaceSnapshot() {
-    localStorage.setItem(storageKeys.code, els.codeInput.value);
+    saveDraftFor(state.problem, state.activeLanguage, els.codeInput.value);
     localStorage.setItem(storageKeys.note, els.questionInput ? els.questionInput.value : "");
     localStorage.setItem(storageKeys.language, els.languageSelect.value);
     localStorage.setItem(storageKeys.hintLevel, els.hintLevelSelect.value);
@@ -397,7 +449,7 @@
   }
 
   function restoreWorkspaceSnapshot() {
-    const savedCode = localStorage.getItem(storageKeys.code);
+    const savedCode = localStorage.getItem(storageKeys.legacyCode);
     const savedNote = localStorage.getItem(storageKeys.note);
     const savedLanguage = localStorage.getItem(storageKeys.language);
     const savedHintLevel = localStorage.getItem(storageKeys.hintLevel);
@@ -407,17 +459,12 @@
     if (savedLanguage) {
       els.languageSelect.value = savedLanguage;
     }
+    state.activeLanguage = els.languageSelect.value;
     if (savedHintLevel) {
       els.hintLevelSelect.value = savedHintLevel;
     }
     if (savedProblemIdentifier) {
       els.problemIdentifier.value = savedProblemIdentifier;
-    }
-    if (savedCode) {
-      els.codeInput.value = savedCode;
-      if (els.editorAutosave) {
-        setText(els.editorAutosave, "Restored local draft");
-      }
     }
     if (savedNote && els.questionInput) {
       els.questionInput.value = savedNote;
@@ -426,13 +473,16 @@
       try {
         const parsed = JSON.parse(savedProblem);
         if (parsed && typeof parsed === "object") {
-          applyProblemState(parsed);
+          applyProblemState(parsed, { legacyDraft: savedCode, restoreDraft: true });
           setStatusTone(els.problemStatus, "neutral");
           setText(els.problemStatus, "Restored your last loaded problem.");
         }
       } catch (error) {
         localStorage.removeItem(storageKeys.problemSnapshot);
       }
+    }
+    if (!state.problem) {
+      restoreDraftFor(null, state.activeLanguage, { legacyDraft: savedCode });
     }
   }
 
@@ -531,6 +581,267 @@
     return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
   }
 
+  const studyStatusLabels = {
+    started: "Started",
+    understood: "Problem understood",
+    brute_force: "Brute force ready",
+    solved: "Working solution",
+    optimized: "Optimized solution",
+    mastered: "Can explain it"
+  };
+
+  function setStudyBusy(isBusy) {
+    state.studySaving = isBusy;
+    [els.studyStatus, els.studyConfidence, els.studyMistakeCategory, els.studyReflection].forEach((control) => {
+      if (control) {
+        control.disabled = isBusy || !state.problem;
+      }
+    });
+    if (els.saveStudyBtn) {
+      els.saveStudyBtn.disabled = isBusy || !state.problem;
+      setText(els.saveStudyBtn, isBusy ? "Saving..." : "Save learning review");
+    }
+    if (els.reviewQueue) {
+      els.reviewQueue.querySelectorAll("button").forEach((button) => {
+        button.disabled = isBusy;
+      });
+    }
+  }
+
+  function formatReviewDate(value, due) {
+    if (!value) {
+      return "Reach a working solution to start spaced revision.";
+    }
+    if (due) {
+      return "Review due now";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "Review scheduled";
+    }
+    return `Next review ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)}`;
+  }
+
+  function applyStudyRecord(record) {
+    if (!els.studyStatus) {
+      return;
+    }
+
+    els.studyStatus.value = record?.status || "started";
+    els.studyConfidence.value = String(record?.confidence || 3);
+    els.studyMistakeCategory.value = record?.mistakeCategory || "";
+    els.studyReflection.value = record?.reflection || "";
+    setText(
+      els.studyNextReview,
+      record
+        ? formatReviewDate(record.nextReviewAt, Boolean(record.due))
+        : "Reach a working solution to start spaced revision."
+    );
+    setText(
+      els.studySaveStatus,
+      record?.updatedAt ? "Learning note restored for this problem." : "Add a checkpoint after your next attempt."
+    );
+    setStatusTone(els.studySaveStatus, "neutral");
+    setStudyBusy(false);
+  }
+
+  function renderReviewQueue(queue) {
+    if (!els.reviewQueue) {
+      return;
+    }
+
+    els.reviewQueue.replaceChildren();
+    const entries = Array.isArray(queue) ? queue : [];
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "review-queue__empty";
+      const emptyTitle = document.createElement("strong");
+      emptyTitle.textContent = "No revisions scheduled yet.";
+      const emptyCopy = document.createElement("p");
+      emptyCopy.textContent = "Save a solved checkpoint to add one.";
+      empty.append(emptyTitle, emptyCopy);
+      els.reviewQueue.appendChild(empty);
+      return;
+    }
+
+    entries.slice(0, 8).forEach((entry) => {
+      const item = document.createElement("article");
+      item.className = `review-queue__item${entry.due ? " review-queue__item--due" : ""}`;
+
+      const title = document.createElement("p");
+      title.className = "review-queue__title";
+      title.textContent = `${entry.frontendId ? `${entry.frontendId}. ` : ""}${entry.problemTitle || entry.problemSlug}`;
+
+      const meta = document.createElement("p");
+      meta.className = "review-queue__meta";
+      const checkpoint = studyStatusLabels[entry.status] || "In progress";
+      meta.textContent = `${formatReviewDate(entry.nextReviewAt, Boolean(entry.due))} · ${checkpoint}`;
+
+      const actions = document.createElement("div");
+      actions.className = "review-queue__actions";
+
+      const loadButton = document.createElement("button");
+      loadButton.type = "button";
+      loadButton.className = "button button--ghost button--compact";
+      loadButton.dataset.studyLoadSlug = entry.problemSlug;
+      loadButton.textContent = "Load problem";
+      loadButton.setAttribute("aria-label", `Load ${entry.problemTitle || entry.problemSlug} for revision`);
+      actions.appendChild(loadButton);
+
+      if (entry.due) {
+        const reviewedButton = document.createElement("button");
+        reviewedButton.type = "button";
+        reviewedButton.className = "button button--secondary button--compact";
+        reviewedButton.dataset.reviewSlug = entry.problemSlug;
+        reviewedButton.dataset.reviewStage = String(entry.reviewStage ?? 0);
+        reviewedButton.textContent = "Reviewed today";
+        reviewedButton.setAttribute("aria-label", `Mark ${entry.problemTitle || entry.problemSlug} reviewed today`);
+        actions.appendChild(reviewedButton);
+      }
+
+      item.append(title, meta, actions);
+      els.reviewQueue.appendChild(item);
+    });
+
+    if (entries.length > 8) {
+      const remaining = document.createElement("p");
+      remaining.className = "review-queue__more";
+      remaining.textContent = `${entries.length - 8} more scheduled. Finish the earliest reviews first.`;
+      els.reviewQueue.appendChild(remaining);
+    }
+  }
+
+  async function loadStudyData(problemSlug) {
+    if (!els.reviewQueue || !els.studyStatus) {
+      return;
+    }
+
+    const loadVersion = ++state.studyLoadVersion;
+    if (problemSlug) {
+      els.studyStatus.value = "started";
+      els.studyConfidence.value = "3";
+      els.studyMistakeCategory.value = "";
+      els.studyReflection.value = "";
+      setText(els.studyNextReview, "Reach a working solution to start spaced revision.");
+    }
+    setText(els.studySaveStatus, "Loading learning record...");
+    setStatusTone(els.studySaveStatus, "loading");
+    setStudyBusy(true);
+    setText(els.saveStudyBtn, "Loading...");
+
+    const query = problemSlug ? `?problem_slug=${encodeURIComponent(problemSlug)}` : "";
+    try {
+      const data = await fetchJson(`/api/study/${query}`);
+      if (loadVersion !== state.studyLoadVersion) {
+        return;
+      }
+      applyStudyRecord(data.record);
+      renderReviewQueue(data.queue);
+    } catch (error) {
+      if (loadVersion !== state.studyLoadVersion) {
+        return;
+      }
+      applyStudyRecord(null);
+      renderReviewQueue([]);
+      setStatusTone(els.studySaveStatus, "error");
+      setText(els.studySaveStatus, error.name === "AbortError" ? "Learning record request timed out." : error.message);
+    }
+  }
+
+  async function saveStudyRecord() {
+    if (!state.problem || state.studySaving) {
+      setStatusTone(els.studySaveStatus, "error");
+      setText(els.studySaveStatus, "Load a problem before saving a learning note.");
+      return;
+    }
+
+    const problemSlug = state.problem.titleSlug;
+    const requestVersion = state.studyLoadVersion;
+    setStudyBusy(true);
+    setStatusTone(els.studySaveStatus, "loading");
+    setText(els.studySaveStatus, "Saving your checkpoint...");
+
+    const payload = {
+      action: "save",
+      problemSlug,
+      problemTitle: state.problem.title,
+      frontendId: state.problem.questionFrontendId,
+      difficulty: state.problem.difficulty,
+      status: els.studyStatus.value,
+      confidence: Number(els.studyConfidence.value),
+      mistakeCategory: els.studyMistakeCategory.value,
+      reflection: els.studyReflection.value.trim()
+    };
+
+    try {
+      const data = await fetchJson("/api/study/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify(payload)
+      });
+      if (requestVersion !== state.studyLoadVersion || state.problem?.titleSlug !== problemSlug) {
+        return;
+      }
+      applyStudyRecord(data.record);
+      renderReviewQueue(data.queue);
+      setStatusTone(els.studySaveStatus, "success");
+      setText(els.studySaveStatus, "Learning checkpoint saved.");
+    } catch (error) {
+      if (requestVersion !== state.studyLoadVersion || state.problem?.titleSlug !== problemSlug) {
+        return;
+      }
+      setStatusTone(els.studySaveStatus, "error");
+      setText(els.studySaveStatus, error.name === "AbortError" ? "Saving timed out. Try again." : error.message);
+    } finally {
+      if (requestVersion === state.studyLoadVersion && state.problem?.titleSlug === problemSlug) {
+        setStudyBusy(false);
+      }
+    }
+  }
+
+  async function markStudyReviewed(problemSlug, expectedReviewStage) {
+    if (!problemSlug || state.studySaving) {
+      return;
+    }
+
+    const requestVersion = state.studyLoadVersion;
+    setStudyBusy(true);
+    setStatusTone(els.studySaveStatus, "loading");
+    setText(els.studySaveStatus, "Updating revision schedule...");
+    try {
+      const data = await fetchJson("/api/study/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": getCsrfToken()
+        },
+        body: JSON.stringify({ action: "reviewed", problemSlug, expectedReviewStage })
+      });
+      if (requestVersion !== state.studyLoadVersion) {
+        return;
+      }
+      if (state.problem?.titleSlug === problemSlug) {
+        applyStudyRecord(data.record);
+      }
+      renderReviewQueue(data.queue);
+      setStatusTone(els.studySaveStatus, "success");
+      setText(els.studySaveStatus, "Review logged. The next revision is scheduled.");
+    } catch (error) {
+      if (requestVersion !== state.studyLoadVersion) {
+        return;
+      }
+      setStatusTone(els.studySaveStatus, "error");
+      setText(els.studySaveStatus, error.name === "AbortError" ? "Update timed out. Try again." : error.message);
+    } finally {
+      if (requestVersion === state.studyLoadVersion) {
+        setStudyBusy(false);
+      }
+    }
+  }
+
   function legacySetProblem(problem) {
     state.problem = problem;
     const tags = (problem.tags || []).join(", ");
@@ -589,8 +900,16 @@
     saveWorkspaceSnapshot();
   }
 
-  function applyProblemState(problem) {
+  function applyProblemState(problem, options = {}) {
+    const previousProblem = state.problem;
+    const isDifferentProblem = previousProblem?.titleSlug !== problem?.titleSlug;
+    if (isDifferentProblem && (previousProblem || els.codeInput.value)) {
+      saveDraftFor(previousProblem, state.activeLanguage, els.codeInput.value);
+    }
     state.problem = problem;
+    if (isDifferentProblem || options.restoreDraft) {
+      restoreDraftFor(problem, state.activeLanguage, { legacyDraft: options.legacyDraft });
+    }
     const tags = Array.isArray(problem.tags) ? problem.tags.filter(Boolean) : [];
     const summaryTags = tags.slice(0, 3);
     const difficulty = problem.difficulty || "Unknown";
@@ -648,6 +967,7 @@
       els.tagList.appendChild(chip);
     });
     saveWorkspaceSnapshot();
+    void loadStudyData(problem.titleSlug);
   }
 
   function setActiveMode(mode) {
@@ -958,28 +1278,17 @@
     els.nextStep.classList.add("hidden");
 
     try {
-      const data = await runWithWakeRetry(
-        () => fetchJson(
-          "/api/assistant/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-CSRFToken": getCsrfToken()
-            },
-            body: JSON.stringify(payload)
-          },
-          30000
-        ),
+      const data = await fetchJson(
+        "/api/assistant/",
         {
-          onWakeStart: () => {
-            setStatusTone(els.assistantStatus, "loading");
-            setText(els.assistantStatus, "Server was asleep. Waking it up and retrying your request...");
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCsrfToken()
           },
-          onRetry: () => {
-            setText(els.assistantStatus, "Server is awake. Retrying your request...");
-          }
-        }
+          body: JSON.stringify(payload)
+        },
+        75000
       );
 
       renderAssistantOutput(data.answer);
@@ -1019,6 +1328,31 @@
 
   els.dailyBtn.addEventListener("click", loadDaily);
   els.loadProblemBtn.addEventListener("click", loadProblem);
+  if (els.saveStudyBtn) {
+    els.saveStudyBtn.addEventListener("click", saveStudyRecord);
+  }
+  if (els.reviewQueue) {
+    els.reviewQueue.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("button") : null;
+      if (!target) {
+        return;
+      }
+
+      const loadSlug = target.getAttribute("data-study-load-slug");
+      if (loadSlug) {
+        els.problemIdentifier.value = loadSlug;
+        saveWorkspaceSnapshot();
+        void loadProblem();
+        return;
+      }
+
+      const reviewSlug = target.getAttribute("data-review-slug");
+      if (reviewSlug) {
+        const expectedReviewStage = Number(target.getAttribute("data-review-stage"));
+        void markStudyReviewed(reviewSlug, expectedReviewStage);
+      }
+    });
+  }
   if (els.askChatgptBtn) {
     els.askChatgptBtn.addEventListener("click", openChatGptWithProblem);
   }
@@ -1033,6 +1367,24 @@
   if (els.closeOutputBtn) {
     els.closeOutputBtn.addEventListener("click", () => {
       setResponsePopoverOpen(false);
+    });
+  }
+  if (els.copyOutputBtn) {
+    els.copyOutputBtn.addEventListener("click", async () => {
+      const text = state.lastAssistantText.trim();
+      if (!text) {
+        setStatusTone(els.assistantStatus, "warning");
+        setText(els.assistantStatus, "There is no mentor output to copy yet.");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatusTone(els.assistantStatus, "success");
+        setText(els.assistantStatus, "Mentor output copied.");
+      } catch (error) {
+        setStatusTone(els.assistantStatus, "error");
+        setText(els.assistantStatus, "Clipboard access was blocked. Select the output and copy it manually.");
+      }
     });
   }
   els.clearOutputBtn.addEventListener("click", () => {
@@ -1051,6 +1403,12 @@
   });
 
   els.languageSelect.addEventListener("change", () => {
+    const nextLanguage = els.languageSelect.value;
+    if (nextLanguage !== state.activeLanguage) {
+      saveDraftFor(state.problem, state.activeLanguage, els.codeInput.value);
+      state.activeLanguage = nextLanguage;
+      restoreDraftFor(state.problem, state.activeLanguage);
+    }
     updateEditorFilename();
     saveWorkspaceSnapshot();
   });
@@ -1080,12 +1438,42 @@
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && isResponsePopoverOpen()) {
       setResponsePopoverOpen(false);
+      return;
+    }
+
+    if (event.key === "Tab" && isResponsePopoverOpen()) {
+      const focusable = Array.from(
+        els.mentorResponsePanel.querySelectorAll("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])")
+      ).filter((element) => !element.hasAttribute("hidden"));
+      if (focusable.length) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (document.activeElement === els.mentorResponsePanel) {
+          event.preventDefault();
+          (event.shiftKey ? last : first).focus();
+        } else if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      runAssistant(state.activeMode);
     }
   });
 
   setActiveMode("hint");
   setContextTab("statement");
   restoreWorkspaceSnapshot();
+  if (!state.problem) {
+    void loadStudyData(null);
+  }
   updateEditorFilename();
   updateServerChip("Server ready", "success");
   setStatusTone(els.problemStatus, "neutral");

@@ -5,13 +5,16 @@ import { askAssistant, fetchProblem, humanizeApiError } from "../lib/api";
 import { ChatMessageBubble } from "../components/ChatMessageBubble";
 import { ProblemCard } from "../components/ProblemCard";
 import { QuickActions } from "../components/QuickActions";
-import { clearChatHistory, getChatHistory, getCodeDraft, saveChatHistory, saveCodeDraft } from "../lib/storage";
+import { clearChatHistory, getChatHistory, getCodeDraft, getPreferences, saveChatHistory, saveCodeDraft } from "../lib/storage";
 
 interface AssistantSidebarProps {
   currentProblem: ProblemContext | null;
   liveCode: string;
+  liveCodeIsLikelyPartial: boolean;
   detectedLanguage: SupportedLanguage | null;
 }
+
+const MAX_SESSION_MESSAGES = 100;
 
 function createMessage(role: ChatMessage["role"], content: string, mode?: AssistantMode): ChatMessage {
   return {
@@ -44,7 +47,7 @@ function defaultPromptForMode(mode: AssistantMode, hintLevel: number): string {
   }
 }
 
-export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }: AssistantSidebarProps) {
+export function AssistantSidebar({ currentProblem, liveCode, liveCodeIsLikelyPartial, detectedLanguage }: AssistantSidebarProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [manualCode, setManualCode] = useState("");
@@ -55,8 +58,18 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
   const [hintLevel, setHintLevel] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [hydratedChatKey, setHydratedChatKey] = useState<string | null>(null);
+  const [hydratedDraftKey, setHydratedDraftKey] = useState<string | null>(null);
   const activeProblem = useMemo(() => selectedProblem ?? currentProblem, [currentProblem, selectedProblem]);
+  const activeProblemSlug = activeProblem?.titleSlug ?? null;
+  const chatContextKey = activeProblemSlug || "global";
+  const draftContextKey = activeProblemSlug || "global";
+  const chatHydrated = hydratedChatKey === chatContextKey;
+  const draftHydrated = hydratedDraftKey === draftContextKey;
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const pageProblemSlugRef = useRef(currentProblem?.titleSlug ?? null);
+  const manuallySelectedProblemRef = useRef(false);
+  const detectedLanguageRef = useRef(detectedLanguage);
 
   const effectiveCode = useMemo(() => {
     const manual = manualCode.trim();
@@ -72,14 +85,40 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
   const codeLines = useMemo(() => displayedCode.split("\n"), [displayedCode]);
 
   useEffect(() => {
-    setSelectedProblem(currentProblem);
+    const nextPageSlug = currentProblem?.titleSlug ?? null;
+    if (pageProblemSlugRef.current !== nextPageSlug) {
+      pageProblemSlugRef.current = nextPageSlug;
+      manuallySelectedProblemRef.current = false;
+      setSelectedProblem(currentProblem);
+      return;
+    }
+
+    if (!manuallySelectedProblemRef.current) {
+      setSelectedProblem(currentProblem);
+    }
   }, [currentProblem]);
 
   useEffect(() => {
+    detectedLanguageRef.current = detectedLanguage;
     if (detectedLanguage) {
       setLanguage(detectedLanguage);
     }
   }, [detectedLanguage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPreferences()
+      .then((preferences) => {
+        if (!cancelled && !detectedLanguageRef.current) {
+          setLanguage(preferences.language);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!currentProblem?.titleSlug) {
@@ -91,34 +130,92 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
       return;
     }
 
-    fetchProblem(currentProblem.titleSlug)
-      .then((problem) => setSelectedProblem(problem))
+    let cancelled = false;
+    const pageSlug = currentProblem.titleSlug;
+    fetchProblem(pageSlug)
+      .then((problem) => {
+        if (!cancelled && pageProblemSlugRef.current === pageSlug && !manuallySelectedProblemRef.current) {
+          setSelectedProblem(problem);
+        }
+      })
       .catch(() => undefined);
-  }, [currentProblem]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProblem?.examples.length, currentProblem?.statement, currentProblem?.titleSlug]);
 
   useEffect(() => {
-    getChatHistory().then(setMessages).catch(() => undefined);
-  }, []);
+    let cancelled = false;
+    setHydratedChatKey(null);
+    setMessages([]);
+
+    getChatHistory(activeProblemSlug)
+      .then((history) => {
+        if (!cancelled) {
+          setMessages(history);
+          setHydratedChatKey(chatContextKey);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHydratedChatKey(chatContextKey);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatContextKey]);
 
   useEffect(() => {
-    saveChatHistory(messages).catch(() => undefined);
-  }, [messages]);
+    if (!chatHydrated) {
+      return;
+    }
+
+    saveChatHistory(messages, activeProblemSlug).catch(() => undefined);
+  }, [activeProblemSlug, chatHydrated, messages]);
 
   useEffect(() => {
-    getCodeDraft(activeProblem?.titleSlug)
-      .then((draft) => setManualCode(draft))
-      .catch(() => undefined);
-  }, [activeProblem?.titleSlug]);
+    let cancelled = false;
+    setHydratedDraftKey(null);
+    setManualCode("");
+
+    getCodeDraft(activeProblemSlug)
+      .then((draft) => {
+        if (!cancelled) {
+          setManualCode(draft);
+          setHydratedDraftKey(draftContextKey);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHydratedDraftKey(draftContextKey);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draftContextKey]);
 
   useEffect(() => {
-    saveCodeDraft(manualCode, activeProblem?.titleSlug).catch(() => undefined);
-  }, [manualCode, activeProblem?.titleSlug]);
+    if (!draftHydrated) {
+      return;
+    }
+
+    saveCodeDraft(manualCode, activeProblemSlug).catch(() => undefined);
+  }, [activeProblemSlug, draftHydrated, manualCode]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
   async function sendMessage(mode: AssistantMode, presetQuestion?: string, forcedHintLevel?: number) {
+    if (loading || !chatHydrated) {
+      return;
+    }
+
     const chosenHintLevel = forcedHintLevel ?? hintLevel;
     const question = (presetQuestion ?? input.trim()) || defaultPromptForMode(mode, chosenHintLevel);
     const needsCode = mode === "debug" || mode === "complexity" || mode === "optimize" || mode === "dry_run";
@@ -133,11 +230,16 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
       return;
     }
 
+    if (needsCode && !useManualCode && liveCodeIsLikelyPartial) {
+      setError("LeetCode is only exposing the visible part of this longer solution. Switch to manual override and paste the full code before requesting code analysis.");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     const userMessage = createMessage("user", question, mode);
-    const nextMessages = [...messages, userMessage];
+    const nextMessages = [...messages, userMessage].slice(-MAX_SESSION_MESSAGES);
     setMessages(nextMessages);
     setInput("");
 
@@ -151,11 +253,11 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
         hintLevel: chosenHintLevel
       });
 
-      setMessages([...nextMessages, createMessage("assistant", response.answer, mode)]);
+      setMessages([...nextMessages, createMessage("assistant", response.answer, mode)].slice(-MAX_SESSION_MESSAGES));
     } catch (caughtError) {
       const message = humanizeApiError(caughtError, "Something went wrong.").message;
       setError(message);
-      setMessages([...nextMessages, createMessage("assistant", `I hit an issue: ${message}`, mode)]);
+      setMessages([...nextMessages, createMessage("assistant", `I hit an issue: ${message}`, mode)].slice(-MAX_SESSION_MESSAGES));
     } finally {
       setLoading(false);
     }
@@ -170,8 +272,9 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
     setError("");
     try {
       const problem = await fetchProblem(lookupValue.trim());
+      manuallySelectedProblemRef.current = true;
       setSelectedProblem(problem);
-      setMessages((previous) => [...previous, createMessage("assistant", `Loaded ${problem.title}. Ask for hints, review, or a dry run.`)]);
+      setLookupValue("");
     } catch (caughtError) {
       setError(humanizeApiError(caughtError, "Failed to load the problem.").message);
     } finally {
@@ -199,7 +302,7 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
               placeholder="1102, two-sum, title, or URL"
               className="assistant-field flex-1 text-sm"
             />
-            <button type="button" onClick={lookupProblem} className="assistant-primary-btn text-sm">
+            <button type="button" disabled={loading} onClick={lookupProblem} className="assistant-primary-btn text-sm">
               Load
             </button>
           </div>
@@ -210,7 +313,13 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
             <div>
               <p className="text-base font-semibold text-slate-100">Live code studio</p>
               <p className="mt-1 text-xs text-slate-400">
-                {useManualCode ? "Using your manual override draft." : liveCode ? "Synced from LeetCode editor automatically." : "Waiting for LeetCode editor sync."}
+                {useManualCode
+                  ? "Using your manual override draft."
+                  : liveCodeIsLikelyPartial
+                    ? "Only the visible editor lines are readable; use manual override for code analysis."
+                    : liveCode
+                      ? "Synced from LeetCode editor automatically."
+                      : "Waiting for LeetCode editor sync."}
               </p>
             </div>
             <button type="button" onClick={() => setUseManualCode((previous) => !previous)} className="assistant-ghost-btn text-xs">
@@ -258,8 +367,9 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
               </div>
               <textarea
                 value={manualCode}
+                disabled={!draftHydrated}
                 onChange={(event) => setManualCode(event.target.value)}
-                placeholder="Paste your code here only if live sync is not enough."
+                placeholder={draftHydrated ? "Paste your code here only if live sync is not enough." : "Loading saved draft..."}
                 className="assistant-code-field h-52 w-full resize-y"
               />
             </label>
@@ -308,7 +418,7 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
             <p className="text-sm font-semibold text-slate-100">Quick actions</p>
             <span className="text-xs text-slate-500">Hint level {hintLevel}</span>
           </div>
-          <QuickActions onSelect={(mode, actionHintLevel) => sendMessage(mode, "", actionHintLevel)} />
+          <QuickActions disabled={loading || !chatHydrated} onSelect={(mode, actionHintLevel) => sendMessage(mode, "", actionHintLevel)} />
         </div>
         <textarea
           value={input}
@@ -321,17 +431,18 @@ export function AssistantSidebar({ currentProblem, liveCode, detectedLanguage }:
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={!chatHydrated}
               onClick={async () => {
                 setMessages([]);
-                await clearChatHistory();
+                await clearChatHistory(activeProblemSlug);
               }}
-              className="assistant-secondary-btn text-sm"
+              className="assistant-secondary-btn text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
               Clear chat
             </button>
             <button
               type="button"
-              disabled={loading}
+              disabled={loading || !chatHydrated}
               onClick={() => sendMessage("hint")}
               className="assistant-primary-btn min-w-[132px] text-sm"
             >

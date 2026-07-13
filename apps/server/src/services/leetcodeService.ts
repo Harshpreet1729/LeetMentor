@@ -2,6 +2,9 @@ import type { ProblemContext } from "@leetcode-assistant/shared";
 import { CacheService } from "./cacheService.js";
 
 const DEFAULT_GRAPHQL_URL = "https://leetcode.com/graphql";
+const LEETCODE_TIMEOUT_MS = 15_000;
+const PROBLEM_INDEX_TTL_MS = 1000 * 60 * 60 * 12;
+const PROBLEM_INDEX_FAILURE_TTL_MS = 1000 * 60 * 5;
 
 const DAILY_QUERY = `
   query questionOfToday {
@@ -66,10 +69,14 @@ const ALL_PROBLEMS_ENDPOINT = "https://leetcode.com/api/problems/all/";
 interface DailyResponse {
   data?: {
     activeDailyCodingChallengeQuestion?: {
-      link: string;
-      question: LeetCodeQuestion;
+      link?: string;
+      question?: LeetCodeQuestion;
     };
   };
+}
+
+interface GraphQLErrorResponse {
+  errors?: Array<{ message?: string }>;
 }
 
 interface ProblemResponse {
@@ -82,33 +89,37 @@ interface SearchResponse {
   data?: {
     problemsetQuestionList?: {
       questions?: Array<{
-        questionFrontendId: string;
-        title: string;
-        titleSlug: string;
+        questionFrontendId?: string;
+        title?: string;
+        titleSlug?: string;
       }>;
     };
   };
 }
 
 interface LeetCodeQuestion {
-  questionFrontendId: string;
-  title: string;
-  titleSlug: string;
-  difficulty: string;
-  content: string;
-  topicTags: Array<{ name: string }>;
+  questionFrontendId?: string;
+  title?: string;
+  titleSlug?: string;
+  difficulty?: string;
+  content?: string;
+  topicTags?: Array<{ name?: string }>;
   stats?: string;
   exampleTestcases?: string;
 }
 
 interface AllProblemsResponse {
   stat_status_pairs?: Array<{
-    stat: {
-      frontend_question_id: number;
-      question__title: string;
-      question__title_slug: string;
+    stat?: {
+      frontend_question_id?: number;
+      question__title?: string;
+      question__title_slug?: string;
     };
   }>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export class LeetCodeService {
@@ -125,7 +136,7 @@ export class LeetCodeService {
       throw new Error("Unable to fetch today's daily challenge from LeetCode.");
     }
 
-    const problem = this.mapQuestion(daily.question, daily.link);
+    const problem = this.mapQuestion(daily.question, daily.link ?? "");
     this.cacheProblem(problem);
     return problem;
   }
@@ -150,7 +161,7 @@ export class LeetCodeService {
       throw new Error("Problem not found. Please check the problem number, title, or URL.");
     }
 
-    const problem = this.mapQuestion(question, `/problems/${question.titleSlug}/`);
+    const problem = this.mapQuestion(question, `/problems/${slug}/`);
     this.cacheProblem(problem);
     return problem;
   }
@@ -158,11 +169,15 @@ export class LeetCodeService {
   private async resolveSlug(identifier: string): Promise<string> {
     if (identifier.startsWith("http")) {
       const url = new URL(identifier);
+      if (url.protocol !== "https:" || (url.hostname !== "leetcode.com" && !url.hostname.endsWith(".leetcode.com"))) {
+        throw new Error("Only HTTPS LeetCode problem URLs are supported.");
+      }
       const parts = url.pathname.split("/").filter(Boolean);
       const problemsIndex = parts.indexOf("problems");
       if (problemsIndex >= 0 && parts[problemsIndex + 1]) {
         return parts[problemsIndex + 1];
       }
+      throw new Error("The LeetCode URL does not contain a problem slug.");
     }
 
     if (/^[a-z0-9-]+$/i.test(identifier) && !/^\d+$/.test(identifier)) {
@@ -215,7 +230,7 @@ export class LeetCodeService {
 
   private async getProblemIndex(): Promise<Array<{ frontendId: string; title: string; titleSlug: string }>> {
     const now = Date.now();
-    if (this.problemIndexCache && now - this.problemIndexFetchedAt < 1000 * 60 * 60 * 12) {
+    if (this.problemIndexCache && now - this.problemIndexFetchedAt < PROBLEM_INDEX_TTL_MS) {
       return this.problemIndexCache;
     }
 
@@ -224,30 +239,57 @@ export class LeetCodeService {
         headers: {
           Referer: "https://leetcode.com/problemset/",
           Origin: "https://leetcode.com"
-        }
+        },
+        signal: AbortSignal.timeout(LEETCODE_TIMEOUT_MS)
       });
 
       if (!response.ok) {
-        return [];
+        throw new Error(`LeetCode problem index request failed with status ${response.status}.`);
       }
 
-      const data = (await response.json()) as AllProblemsResponse;
-      this.problemIndexCache =
-        data.stat_status_pairs?.map((entry) => ({
-          frontendId: String(entry.stat.frontend_question_id),
-          title: entry.stat.question__title,
-          titleSlug: entry.stat.question__title_slug
-        })) ?? [];
+      const rawData: unknown = await response.json();
+      const data = isRecord(rawData) ? (rawData as AllProblemsResponse) : {};
+      const indexEntries = Array.isArray(data.stat_status_pairs) ? data.stat_status_pairs : [];
+      this.problemIndexCache = indexEntries.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return [];
+        }
+        const stat = entry.stat;
+        if (
+          !stat ||
+          typeof stat.frontend_question_id !== "number" ||
+          typeof stat.question__title !== "string" ||
+          typeof stat.question__title_slug !== "string"
+        ) {
+          return [];
+        }
+        return [
+          {
+            frontendId: String(stat.frontend_question_id),
+            title: stat.question__title,
+            titleSlug: stat.question__title_slug
+          }
+        ];
+      });
       this.problemIndexFetchedAt = now;
       return this.problemIndexCache;
     } catch {
-      return [];
+      this.problemIndexCache ??= [];
+      this.problemIndexFetchedAt = now - PROBLEM_INDEX_TTL_MS + PROBLEM_INDEX_FAILURE_TTL_MS;
+      return this.problemIndexCache;
     }
   }
 
   private async searchSlug(identifier: string): Promise<string | null> {
     const response = await this.graphqlRequest<SearchResponse>(SEARCH_QUERY, { search: identifier });
-    const questions = response.data?.problemsetQuestionList?.questions ?? [];
+    const rawQuestions = response.data?.problemsetQuestionList?.questions;
+    const questions = (Array.isArray(rawQuestions) ? rawQuestions : []).filter(
+      (question): question is { questionFrontendId: string; title: string; titleSlug: string } =>
+        Boolean(question) &&
+        typeof question.questionFrontendId === "string" &&
+        typeof question.title === "string" &&
+        typeof question.titleSlug === "string"
+    );
     const normalized = identifier.trim().toLowerCase();
 
     const exactMatch = questions.find((question) => {
@@ -261,21 +303,52 @@ export class LeetCodeService {
     return exactMatch?.titleSlug ?? questions[0]?.titleSlug ?? null;
   }
 
-  private mapQuestion(question: LeetCodeQuestion, link: string): ProblemContext {
-    const stats = question.stats ? JSON.parse(question.stats) : undefined;
-    const { statement, examples, constraints } = this.extractContentSections(question.content ?? "");
+  private mapQuestion(question: LeetCodeQuestion, link: unknown): ProblemContext {
+    if (
+      typeof question.title !== "string" ||
+      typeof question.titleSlug !== "string" ||
+      typeof question.questionFrontendId !== "string" ||
+      typeof question.difficulty !== "string"
+    ) {
+      throw new Error("LeetCode returned incomplete problem data.");
+    }
+
+    let acceptanceRate: number | undefined;
+    if (question.stats) {
+      try {
+        const stats: unknown = JSON.parse(question.stats);
+        if (isRecord(stats) && (typeof stats.acRate === "number" || typeof stats.acRate === "string")) {
+          const parsedRate = Number.parseFloat(String(stats.acRate));
+          if (Number.isFinite(parsedRate)) {
+            acceptanceRate = parsedRate;
+          }
+        }
+      } catch {
+        // Stats are optional; malformed provider metadata should not hide a valid problem.
+      }
+    }
+
+    const content = typeof question.content === "string" ? question.content : "";
+    const { statement, examples, constraints } = this.extractContentSections(content);
+    if (!examples.length && typeof question.exampleTestcases === "string" && question.exampleTestcases.trim()) {
+      examples.push(question.exampleTestcases.trim());
+    }
+    const tags = Array.isArray(question.topicTags)
+      ? question.topicTags.flatMap((tag) => (tag && typeof tag.name === "string" ? [tag.name] : []))
+      : [];
+    const safeLink = typeof link === "string" ? link : "";
 
     return {
       title: question.title,
       titleSlug: question.titleSlug,
       questionFrontendId: question.questionFrontendId,
       difficulty: question.difficulty,
-      tags: question.topicTags.map((tag) => tag.name),
-      link: link.startsWith("http") ? link : `https://leetcode.com${link}`,
+      tags,
+      link: safeLink.startsWith("http") ? safeLink : `https://leetcode.com${safeLink || `/problems/${question.titleSlug}/`}`,
       statement,
       examples,
       constraints,
-      acceptanceRate: stats?.acRate ? Number.parseFloat(stats.acRate) : undefined
+      ...(acceptanceRate !== undefined ? { acceptanceRate } : {})
     };
   }
 
@@ -285,14 +358,17 @@ export class LeetCodeService {
     constraints: string[];
   } {
     const plainText = content
-      .replace(/<pre>/g, "\n")
-      .replace(/<\/pre>/g, "\n")
-      .replace(/<li>/g, "- ")
-      .replace(/<\/li>/g, "\n")
+      .replace(/<pre\b[^>]*>/gi, "\n")
+      .replace(/<\/pre>/gi, "\n")
+      .replace(/<li\b[^>]*>/gi, "- ")
+      .replace(/<\/li>/gi, "\n")
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&quot;/g, "\"")
       .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
       .replace(/\s+\n/g, "\n")
       .replace(/\n{2,}/g, "\n\n")
       .trim();
@@ -333,13 +409,30 @@ export class LeetCodeService {
         Referer: "https://leetcode.com",
         Origin: "https://leetcode.com"
       },
-      body: JSON.stringify({ query, variables })
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(LEETCODE_TIMEOUT_MS)
     });
 
     if (!response.ok) {
       throw new Error(`LeetCode request failed with status ${response.status}.`);
     }
 
-    return (await response.json()) as T;
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("LeetCode returned an invalid JSON response.");
+    }
+
+    if (!isRecord(payload)) {
+      throw new Error("LeetCode returned an invalid response shape.");
+    }
+
+    const graphqlPayload = payload as GraphQLErrorResponse;
+    if (Array.isArray(graphqlPayload.errors) && graphqlPayload.errors.length > 0) {
+      throw new Error("LeetCode returned a GraphQL error.");
+    }
+
+    return payload as T;
   }
 }

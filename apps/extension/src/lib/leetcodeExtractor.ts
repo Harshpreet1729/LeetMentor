@@ -44,7 +44,7 @@ function extractConstraints(statement: string): string[] {
   }
 
   return match[1]
-    .split(/\n|•|-/)
+    .split(/\r?\n|[•·]/)
     .map((line) => cleanText(line))
     .filter(Boolean);
 }
@@ -120,11 +120,11 @@ function normalizeLanguage(raw: string | null | undefined): SupportedLanguage | 
   if (normalized.includes("python")) {
     return "Python";
   }
-  if (normalized.includes("java")) {
-    return "Java";
-  }
   if (normalized.includes("javascript")) {
     return "JavaScript";
+  }
+  if (normalized.includes("java")) {
+    return "Java";
   }
   return null;
 }
@@ -132,6 +132,16 @@ function normalizeLanguage(raw: string | null | undefined): SupportedLanguage | 
 export interface LiveEditorSnapshot {
   code: string;
   language: SupportedLanguage | null;
+  isLikelyPartial: boolean;
+}
+
+function editorHasHiddenLines(): boolean {
+  const scrollContainers = Array.from(
+    document.querySelectorAll<HTMLElement>(".monaco-editor .monaco-scrollable-element, .cm-editor .cm-scroller")
+  );
+  return scrollContainers.some(
+    (container) => container.clientHeight > 0 && container.scrollHeight > container.clientHeight + 4
+  );
 }
 
 function extractMonacoCode(): string {
@@ -170,6 +180,7 @@ export async function extractLiveEditorSnapshotFromPage(): Promise<LiveEditorSna
 
   return {
     code,
-    language: normalizeLanguage(languageCandidates.find(Boolean))
+    language: normalizeLanguage(languageCandidates.find(Boolean)),
+    isLikelyPartial: Boolean(code) && editorHasHiddenLines()
   };
 }

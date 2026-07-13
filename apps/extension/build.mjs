@@ -1,12 +1,16 @@
 import path from "node:path";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
 import { build as esbuildBuild } from "esbuild";
 
-const extensionDir = path.resolve("D:/Leetcode_assistant/apps/extension");
+const extensionDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(extensionDir, "dist");
 
+process.chdir(extensionDir);
+
 await viteBuild({
+  root: extensionDir,
   configFile: path.join(extensionDir, "vite.config.ts")
 });
 

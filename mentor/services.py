@@ -503,9 +503,8 @@ class LeetCodeService:
 
 class AIService:
     def generate_assistant_response(self, payload: dict[str, Any]) -> dict[str, Any]:
-        mode = payload.get("mode")
-        if not mode:
-            raise ValueError("Mode is required.")
+        self._validate_payload(payload)
+        mode = payload["mode"]
 
         local_fallback = self._fallback_for_mode(payload)
 
@@ -517,12 +516,6 @@ class AIService:
                     "suggestedNextStep": self._suggest_next_step(mode)
                 }
             raise ValueError("Missing GROQ_API_KEY. Add it to your root .env or apps/server/.env file.")
-
-        if mode == "complexity":
-            return {
-                "answer": self._generate_complexity_fallback(payload.get("problem") or {}, (payload.get("userCode") or "").strip()),
-                "suggestedNextStep": self._suggest_next_step(mode)
-            }
 
         try:
             answer = self._request_groq(payload, api_key)
@@ -552,6 +545,41 @@ class AIService:
                 answer = local_explanation
 
         return {"answer": answer, "suggestedNextStep": self._suggest_next_step(mode)}
+
+    def _validate_payload(self, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("Request body must be an object.")
+
+        mode = payload.get("mode")
+        if mode not in MODE_GUIDANCE:
+            raise ValueError("Unsupported mentor mode.")
+
+        language = payload.get("language", "C++")
+        if language not in {"C++", "Python", "Java", "JavaScript"}:
+            raise ValueError("Unsupported programming language.")
+
+        hint_level = payload.get("hintLevel", 1)
+        if isinstance(hint_level, bool) or not isinstance(hint_level, int) or hint_level not in {1, 2, 3}:
+            raise ValueError("Hint level must be 1, 2, or 3.")
+
+        for field, maximum in (("userQuestion", 4_000), ("userCode", 60_000)):
+            value = payload.get(field, "")
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{field} must be text.")
+            if isinstance(value, str) and len(value) > maximum:
+                raise ValueError(f"{field} is too long.")
+
+        problem = payload.get("problem")
+        if problem is not None and not isinstance(problem, dict):
+            raise ValueError("Problem context must be an object.")
+        if isinstance(problem, dict):
+            statement = problem.get("statement", "")
+            if not isinstance(statement, str) or len(statement) > 80_000:
+                raise ValueError("Problem statement is invalid or too long.")
+            for field, limit in (("examples", 12), ("constraints", 80), ("tags", 40)):
+                values = problem.get(field, [])
+                if not isinstance(values, list) or len(values) > limit or any(not isinstance(item, str) for item in values):
+                    raise ValueError(f"Problem {field} are invalid or too large.")
 
     def _hint_shape_is_valid(self, answer: str, hint_level: int) -> bool:
         normalized = answer.lower()
@@ -931,30 +959,30 @@ class AIService:
         if "hash table" in tags:
             if hint_level == 1:
                 return level_one(
-                    "Notice whether each current value needs a matching earlier value to finish the answer. That points to remembering what you have already seen instead of scanning again.",
-                    "Write the expression for the value you wish you had seen before the current element.",
-                    "Can you decide the answer for `nums[i]` using only earlier elements?",
-                    "need = target - nums[i]",
+                    "A hash table tag only tells you that repeated lookup may matter; it does not tell you what the key should be. Find the exact question the brute force repeats.",
+                    "Write one sentence naming the lookup key and the information its value must remember.",
+                    "Would two inputs that share this key always be interchangeable for the remaining work?",
+                    "lookup_key = information_needed_later",
                 )
             if hint_level == 2:
                 return level_two(
-                    "A lookup table fits because the question repeatedly asks whether a needed value already exists. The important detail is update order.",
+                    "Use a lookup table only after defining the problem-specific key. The value might be a count, index, group, or best result; derive that from the statement rather than the tag.",
                     [
-                        "Create a map from value to the index where it appeared.",
-                        "For each current value, compute the partner needed for a valid answer.",
-                        "Check the map before adding the current value so you do not reuse the same element.",
+                        "Name the repeated lookup performed by the brute-force approach.",
+                        "Choose a canonical key that makes equivalent inputs match.",
+                        "Store only the information required to answer the next lookup.",
                     ],
-                    "If the current value appears twice, does your code still avoid using the same index twice?",
+                    "Check whether update order changes the result when the same key appears more than once.",
                 )
             return level_three(
-                "Use one pass plus a lookup table so each number can immediately check whether its partner has already appeared.",
+                "Replace the repeated lookup in the brute-force approach with a table whose key and stored value are derived from the exact statement.",
                 [
-                    "Create a lookup table for values you have already seen.",
-                    "Scan the input from left to right and compute the partner needed for the current value.",
-                    "If that partner is already in the lookup table, use the stored position and the current position to form the answer.",
-                    "Otherwise, store the current value with its position and continue.",
+                    "Identify the repeated question that makes the direct approach slow.",
+                    "Define a canonical lookup key for that question.",
+                    "Query or update the stored count, index, group, or state in the required order.",
+                    "Build the final result from the completed table or the matches found during traversal.",
                 ],
-                "Test a case with duplicate values so you know the lookup order is correct.",
+                "Test duplicate keys and two different inputs that should map to the same key.",
             )
 
         if "two pointers" in tags and "linked list" in tags:
@@ -1258,16 +1286,8 @@ class AIService:
             return self._generate_progressive_hint(problem, hint_level)
         if mode == "explain":
             return self._generate_concise_explanation(problem)
-        if mode == "complexity":
-            return self._generate_complexity_fallback(problem, code)
         if mode == "debug":
             return self._generate_debug_fallback(problem, code, language)
-        if mode == "optimize":
-            return self._generate_optimize_fallback(problem, code)
-        if mode == "full_solution":
-            return self._generate_full_solution_fallback(problem, language)
-        if mode == "dry_run":
-            return self._generate_dry_run_fallback(problem)
         return None
 
     def _generate_complexity_fallback(self, problem: dict[str, Any], code: str) -> str:

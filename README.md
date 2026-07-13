@@ -39,6 +39,10 @@ It currently ships in two surfaces that share the same teaching philosophy:
 | Web dashboard | Full-screen study sessions with problem, code, and mentor output side by side | Django, HTML, CSS, JS |
 | Chrome extension | In-context practice directly on the LeetCode page | React, TypeScript, Express |
 
+Both surfaces now keep drafts scoped to the current problem and language. The extension also keeps a capped chat history per problem, while the web dashboard supports focused questions, copyable mentor output, and `Ctrl`/`⌘` + `Enter` shortcuts.
+
+The Django dashboard also includes a session-scoped Learning Review System: students save their progress checkpoint, confidence, main mistake, and reflection for each problem. Solved problems automatically enter a spaced revision queue scheduled after 1, 3, 7, 21, and 45 days.
+
 ## Why This Exists
 
 ```mermaid
@@ -110,6 +114,16 @@ flowchart TD
     class E choice;
     class F,G,H,I,J action;
 ```
+
+### Learning Review Loop
+
+1. Load a problem and make an honest attempt.
+2. Save the current checkpoint, confidence, and main mistake.
+3. Write one short reflection about what to try first next time.
+4. Once the problem is solved, revisit it from the revision queue.
+5. Mark the revision complete to schedule the next interval.
+
+Learning records are stored by Django and isolated to the anonymous browser session. No account is required for local practice.
 
 ## Architecture
 
@@ -288,6 +302,8 @@ npm run dev:server
 
 This serves the extension backend at `http://localhost:4000`.
 
+The server binds to `127.0.0.1` by default. Set `HOST` only when you intentionally need another interface, and use a comma-separated `CORS_ORIGIN` allowlist for any non-local web clients. Chrome extension origins and local development origins are handled automatically.
+
 ### 3. Extension build
 
 Run the extension dev build:
@@ -305,6 +321,7 @@ npm run dev:extension
 | `/api/health/` | Health check |
 | `/api/daily/` | Fetch the daily challenge |
 | `/api/problem/?identifier=...` | Resolve a problem by number, slug, title, or URL |
+| `/api/study/` | Save a learning review or load the session revision queue |
 | `/api/assistant/` | Generate mentor output for the web dashboard |
 
 ### Extension API
@@ -321,6 +338,21 @@ npm run dev:extension
 - Without that key, some local fallback logic still helps with hints or guardrails, but the full mentor experience is limited.
 - `AI_MODEL` defaults to `llama-3.3-70b-versatile`.
 - The extension and the Django dashboard are separate runtimes, so deploying the web app does not automatically deploy the extension backend.
+- `ASSISTANT_RATE_LIMIT` controls the Django dashboard's per-session request allowance (default: 20 requests per five minutes).
+- Invalid modes, oversized payloads, malformed provider data, and untrusted browser origins are rejected before they can reach the AI provider.
+
+## Verification
+
+Run the full local verification set with:
+
+```bash
+npm run typecheck
+npm run build
+python manage.py test
+python manage.py check
+```
+
+The Django suite covers endpoint validation, rate limiting, problem parsing, and safe offline guidance. The TypeScript build validates the server, shared contracts, popup/options UI, and loadable extension content-script bundle.
 
 ## Deployment
 
@@ -378,7 +410,7 @@ gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT
 ```mermaid
 flowchart LR
     A["Current foundation"] --> B["Stronger hint ladder"]
-    A --> C["Session history"]
+    A --> C["Session export and progress summaries"]
     A --> D["Language-aware code review"]
     A --> E["Monaco editor polish"]
     A --> F["More automated tests"]
