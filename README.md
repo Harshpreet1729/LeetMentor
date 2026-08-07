@@ -375,6 +375,13 @@ The included blueprint provisions:
 
 - one Python web service
 - one PostgreSQL database
+- an HTTP health check at `/api/health/`
+
+The default branch also includes `.github/workflows/keep-render-awake.yml`, which
+pings the deployed health endpoint every 10 minutes. This prevents the usual
+15-minute idle spin-down on a free Render web service as long as scheduled
+GitHub Actions remain enabled. For guaranteed always-on hosting, use a paid
+Render web-service instance; free services can still be restarted by Render.
 
 Important production variables:
 
@@ -391,7 +398,7 @@ Manual commands:
 
 ```bash
 ./build.sh
-gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT
+gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT --timeout 90 --graceful-timeout 30 --keep-alive 5
 ```
 
 ## Current Stack

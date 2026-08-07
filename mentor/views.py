@@ -265,9 +265,19 @@ def study_records(request: HttpRequest) -> JsonResponse:
 
 
 def _assistant_client_key(request: HttpRequest) -> str:
-    if not request.session.session_key:
-        request.session.create()
-    return request.session.session_key or request.META.get("REMOTE_ADDR", "unknown")
+    # The mentor endpoint must stay usable when the optional study database is
+    # unavailable (for example, after a free Render Postgres instance expires).
+    # Reading an existing session key is lazy and does not query the database;
+    # creating one here would make every AI request depend on Postgres.
+    session_key = request.session.session_key
+    if session_key:
+        return f"session:{session_key}"
+
+    forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    client_address = forwarded_for.split(",", 1)[0].strip()
+    if not client_address:
+        client_address = request.META.get("REMOTE_ADDR", "unknown")
+    return f"ip:{client_address}"
 
 
 def _assistant_retry_after(request: HttpRequest) -> int | None:

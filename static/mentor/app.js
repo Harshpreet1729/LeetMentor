@@ -1047,8 +1047,15 @@
         data = await response.json();
       } else {
         const text = await response.text();
+        const normalizedText = text.trim().toLowerCase();
+        const isHtmlResponse =
+          contentType.includes("text/html") ||
+          normalizedText.startsWith("<!doctype") ||
+          normalizedText.startsWith("<html");
         throw createRequestError(
-          text.startsWith("<!DOCTYPE") ? "The server is waking up. Retrying shortly..." : text || "Request failed.",
+          isHtmlResponse
+            ? "The server returned a temporary error. Retrying shortly..."
+            : text || "Request failed.",
           response.status
         );
       }
@@ -1278,17 +1285,28 @@
     els.nextStep.classList.add("hidden");
 
     try {
-      const data = await fetchJson(
-        "/api/assistant/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": getCsrfToken()
+      const data = await runWithWakeRetry(
+        () => fetchJson(
+          "/api/assistant/",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-CSRFToken": getCsrfToken()
+            },
+            body: JSON.stringify(payload)
           },
-          body: JSON.stringify(payload)
-        },
-        75000
+          75000
+        ),
+        {
+          onWakeStart: () => {
+            setStatusTone(els.assistantStatus, "loading");
+            setText(els.assistantStatus, "Server was unavailable. Waking it up and retrying your request...");
+          },
+          onRetry: () => {
+            setText(els.assistantStatus, "Server is ready. Retrying your request...");
+          }
+        }
       );
 
       renderAssistantOutput(data.answer);

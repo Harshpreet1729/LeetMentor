@@ -127,6 +127,19 @@ class MentorEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], "A grounded hint.")
 
+    @patch("mentor.views.ai_service.generate_assistant_response")
+    def test_assistant_without_session_does_not_create_database_session(self, generate) -> None:
+        generate.return_value = {"answer": "A grounded hint.", "suggestedNextStep": "Try it."}
+        request = self.client.post(
+            "/api/assistant/",
+            data=json.dumps({"mode": "hint", "hintLevel": 1}),
+            content_type="application/json",
+            HTTP_X_FORWARDED_FOR="203.0.113.10, 10.0.0.1",
+        )
+
+        self.assertEqual(request.status_code, 200)
+        self.assertNotIn("sessionid", self.client.cookies)
+
     @patch("mentor.views.ASSISTANT_RATE_LIMIT", 1)
     @patch("mentor.views.ai_service.generate_assistant_response")
     def test_assistant_rate_limit_returns_retry_after(self, generate) -> None:
