@@ -393,6 +393,9 @@ AI_MODEL=llama-3.3-70b-versatile
 ```
 
 `DATABASE_URL` is supplied automatically when you use the included Render blueprint.
+If that optional database is unavailable, deployment continues and the core problem
+and mentor flows remain usable; learning-review persistence resumes after a healthy
+database is connected and migrations run successfully.
 
 Manual commands:
 
