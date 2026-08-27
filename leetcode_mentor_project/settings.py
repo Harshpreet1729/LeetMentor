@@ -44,19 +44,24 @@ for dev_host in ("testserver", "127.0.0.1", "localhost"):
     if dev_host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(dev_host)
 
-render_hostname = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
-if render_hostname and render_hostname not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(render_hostname)
+platform_hostnames = {
+    os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip(),
+    os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip(),
+}
+platform_hostnames.discard("")
+for platform_hostname in platform_hostnames:
+    if platform_hostname not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(platform_hostname)
 
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
     if origin.strip()
 ]
-if render_hostname:
-    render_origin = f"https://{render_hostname}"
-    if render_origin not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(render_origin)
+for platform_hostname in platform_hostnames:
+    platform_origin = f"https://{platform_hostname}"
+    if platform_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(platform_origin)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
