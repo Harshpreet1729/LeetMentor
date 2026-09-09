@@ -38,8 +38,6 @@ class StudyValidationError(ValueError):
 def _session_key(request: HttpRequest) -> str:
     if not request.session.session_key:
         request.session.create()
-    # SessionStore.create() guarantees a key; keeping the check explicit avoids
-    # ever querying records with an empty owner key.
     session_key = request.session.session_key
     if not session_key:
         raise RuntimeError("Unable to create a study session.")
@@ -61,9 +59,7 @@ def _problem_slug(value: object, *, required: bool = True) -> str | None:
     return slug
 
 
-def _optional_string(
-    payload: dict[str, object], key: str, max_length: int, *, allow_blank: bool = True
-) -> str | None:
+def _optional_string(payload: dict[str, object], key: str, max_length: int, *, allow_blank: bool = True) -> str | None:
     if key not in payload:
         return None
     value = payload[key]
