@@ -1,435 +1,132 @@
-<p align="center">
-  <img src="static/brand/leetmentor-mark.svg" alt="LeetMentor logo" width="72" />
-</p>
+# LeetMentor
 
-<h1 align="center">LeetMentor</h1>
+A Django web app for LeetCode practice: load a problem, write your attempt, ask for focused help, and save what you learned.
 
-<p align="center">
-  Guided LeetCode practice for people who want to learn the pattern, not just copy the answer.
-</p>
+## Run locally
 
-<p align="center">
-  <a href="https://leetmentor-1ya8.onrender.com">Live demo</a> |
-  <a href="#architecture">Architecture</a> |
-  <a href="#data-flow">Data Flow</a> |
-  <a href="#local-setup">Local Setup</a>
-</p>
-
-<p align="center">
-  <img alt="Django" src="https://img.shields.io/badge/Django-Web%20workspace-113228?style=for-the-badge" />
-  <img alt="React" src="https://img.shields.io/badge/React-Extension%20UI-0F172A?style=for-the-badge" />
-  <img alt="Express" src="https://img.shields.io/badge/Express-Extension%20API-111827?style=for-the-badge" />
-  <img alt="Groq" src="https://img.shields.io/badge/Groq-AI%20responses-0B3B2E?style=for-the-badge" />
-</p>
-
-## Overview
-
-LeetMentor keeps the full problem-solving loop in one workspace:
-
-- load a LeetCode problem
-- think before asking for help
-- write your own attempt
-- request the smallest useful intervention
-- revise until the pattern clicks
-
-It currently ships in two surfaces that share the same teaching philosophy:
-
-| Surface | Best for | Main stack |
-| --- | --- | --- |
-| Web dashboard | Full-screen study sessions with problem, code, and mentor output side by side | Django, HTML, CSS, JS |
-| Chrome extension | In-context practice directly on the LeetCode page | React, TypeScript, Express |
-
-Both surfaces now keep drafts scoped to the current problem and language. The extension also keeps a capped chat history per problem, while the web dashboard supports focused questions, copyable mentor output, and `Ctrl`/`⌘` + `Enter` shortcuts.
-
-The Django dashboard also includes a session-scoped Learning Review System: students save their progress checkpoint, confidence, main mistake, and reflection for each problem. Solved problems automatically enter a spaced revision queue scheduled after 1, 3, 7, 21, and 45 days.
-
-## Why This Exists
-
-```mermaid
-flowchart LR
-    subgraph Old["Typical copy-paste AI loop"]
-        A1["Open LeetCode"]
-        A2["Copy the full prompt"]
-        A3["Paste into chatbot"]
-        A4["Read a big answer"]
-        A5["Paste code back"]
-        A1 --> A2 --> A3 --> A4 --> A5
-    end
-
-    subgraph New["LeetMentor learning loop"]
-        B1["Load problem"]
-        B2["Think first"]
-        B3["Write attempt"]
-        B4["Ask for targeted help"]
-        B5["Refine and submit"]
-        B1 --> B2 --> B3 --> B4 --> B5
-    end
-
-    classDef old fill:#1f2937,stroke:#475569,color:#e5e7eb,stroke-width:1px;
-    classDef mentor fill:#0f3d2e,stroke:#34d399,color:#ecfdf5,stroke-width:1px;
-    class A1,A2,A3,A4,A5 old;
-    class B1,B2,B3,B4,B5 mentor;
-```
-
-The point is not just convenience. The product is trying to preserve productive struggle, reduce context switching, and make hints feel like coaching instead of answer vending.
-
-## Experience Model
-
-### Mentor Actions
-
-| Action | When to use it | What it should do |
-| --- | --- | --- |
-| `Hint` | You are blocked but still want to solve it yourself | Nudge the next move without dumping code |
-| `Explain` | The statement or constraints are unclear | Rephrase the task in simpler words |
-| `Review my code` | You already wrote an attempt | Find the exact bug or reasoning mistake |
-| `Complexity` | Your code works, but you doubt the efficiency | Compare current vs target complexity |
-| `Optimize` | You want the better pattern | Explain the upgrade path |
-| `Dry run` | You need to see state changes on real input | Walk through one example clearly |
-| `Full solution` | You already tried and now want a clean reference | Show the optimal approach last |
-
-### Study Loop
-
-```mermaid
-flowchart TD
-    A["Load problem"] --> B["Read goal, examples, constraints"]
-    B --> C["Think before asking"]
-    C --> D["Write first attempt"]
-    D --> E{"What help do I need?"}
-    E -->|"Need a nudge"| F["Hint"]
-    E -->|"Need clarity"| G["Explain"]
-    E -->|"My code fails"| H["Review my code"]
-    E -->|"I need speed"| I["Complexity / Optimize"]
-    E -->|"Need a reference"| J["Full solution"]
-    F --> K["Revise approach"]
-    G --> K
-    H --> K
-    I --> K
-    K --> D
-    J --> L["Compare, then rewrite in your own words"]
-
-    classDef step fill:#0f172a,stroke:#334155,color:#f8fafc;
-    classDef choice fill:#3b2f0c,stroke:#f59e0b,color:#fef3c7;
-    classDef action fill:#082f49,stroke:#38bdf8,color:#e0f2fe;
-    class A,B,C,D,K,L step;
-    class E choice;
-    class F,G,H,I,J action;
-```
-
-### Learning Review Loop
-
-1. Load a problem and make an honest attempt.
-2. Save the current checkpoint, confidence, and main mistake.
-3. Write one short reflection about what to try first next time.
-4. Once the problem is solved, revisit it from the revision queue.
-5. Mark the revision complete to schedule the next interval.
-
-Learning records are stored by Django and isolated to the anonymous browser session. No account is required for local practice.
-
-## Architecture
-
-LeetMentor is one product with two delivery surfaces:
-
-- the Django app is the standalone study dashboard
-- the extension stack is a React sidebar plus a local Express API
-- both surfaces fetch LeetCode problem data and generate mentor responses
-
-```mermaid
-flowchart TB
-    U["User"]
-
-    subgraph Surface["User-facing surfaces"]
-        W["Django dashboard"]
-        X["Chrome extension sidebar"]
-    end
-
-    subgraph Services["Application services"]
-        M["mentor/views.py + mentor/services.py"]
-        S["apps/server/src/index.ts"]
-        P["packages/shared<br/>types + constants"]
-    end
-
-    subgraph External["External providers"]
-        L["LeetCode GraphQL + problem index"]
-        G["Groq Chat Completions API"]
-    end
-
-    U --> W
-    U --> X
-
-    W --> M
-    X --> S
-    X -. shares contracts .-> P
-    S -. shares contracts .-> P
-
-    M --> L
-    M --> G
-    S --> L
-    S --> G
-
-    classDef surface fill:#0f172a,stroke:#64748b,color:#f8fafc;
-    classDef service fill:#0f3d2e,stroke:#34d399,color:#ecfdf5;
-    classDef external fill:#3f1d2e,stroke:#fb7185,color:#fff1f2;
-    class U,W,X surface;
-    class M,S,P service;
-    class L,G external;
-```
-
-## Data Flow
-
-### Web Dashboard Request Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Web as Django dashboard
-    participant Views as mentor/views.py
-    participant Service as mentor/services.py
-    participant LC as LeetCode
-    participant AI as Groq
-
-    User->>Web: Load problem / choose mentor action
-    Web->>Views: /api/problem or /api/assistant
-    Views->>Service: Resolve problem or generate response
-    Service->>LC: Fetch statement, examples, constraints
-    Service->>AI: Generate hint, explanation, review, or solution
-    AI-->>Service: Structured markdown answer
-    Service-->>Views: JSON payload
-    Views-->>Web: Render response in mentor output panel
-```
-
-### Extension Request Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Page as LeetCode page
-    participant CS as contentScript.tsx
-    participant BG as background.ts
-    participant API as Express API
-    participant LC as LeetCode
-    participant AI as Groq
-
-    User->>Page: Open a problem
-    CS->>Page: Extract title, slug, code, language
-    User->>CS: Open sidebar and pick an action
-    CS->>BG: Send runtime API request
-    BG->>API: Forward /api/assistant or /api/leetcode/*
-    API->>LC: Fetch problem metadata when needed
-    API->>AI: Generate mentor response
-    API-->>BG: JSON response
-    BG-->>CS: Return result
-    CS-->>User: Render hint, review, or walkthrough
-```
-
-### Runtime Boundaries
-
-```mermaid
-flowchart LR
-    A["Browser page DOM"] --> B["Extension content script"]
-    B --> C["Extension background worker"]
-    C --> D["Local Express API :4000"]
-    D --> E["Groq API"]
-    D --> F["LeetCode endpoints"]
-
-    classDef local fill:#111827,stroke:#4b5563,color:#f9fafb;
-    classDef remote fill:#3f1d2e,stroke:#fb7185,color:#fff1f2;
-    class A,B,C,D local;
-    class E,F remote;
-```
-
-## Repository Layout
-
-```mermaid
-flowchart TD
-    A["manage.py"] --> B["leetcode_mentor_project/"]
-    B --> C["mentor/"]
-    C --> D["views.py<br/>services.py<br/>urls.py"]
-    C --> E["templates/mentor/"]
-    C --> F["static/mentor/"]
-
-    G["apps/server/"] --> H["Express API for extension"]
-    I["apps/extension/"] --> J["React sidebar, content script, background worker"]
-    K["packages/shared/"] --> L["Shared TS types and constants"]
-
-    H --> K
-    I --> K
-
-    classDef node fill:#0f172a,stroke:#64748b,color:#f8fafc;
-    class A,B,C,D,E,F,G,H,I,J,K,L node;
-```
-
-## Local Setup
-
-### 1. Python workspace
+Use Python 3.12 or newer. No Node.js, npm build, or Chrome extension is needed.
 
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
 ```
 
-Create a `.env` file in the repo root:
+Activate the environment on Windows:
 
-```env
-DJANGO_SECRET_KEY=replace_me
-DJANGO_DEBUG=true
-DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
-GROQ_API_KEY=your_groq_api_key_here
-AI_MODEL=llama-3.3-70b-versatile
-LEETCODE_GRAPHQL_URL=https://leetcode.com/graphql
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
-Run the Django app:
+On macOS or Linux, use `source .venv/bin/activate`.
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Copy `.env.example` to `.env` and add your Groq API key. Keep `.env` private.
 
 ```bash
 python manage.py migrate
 python manage.py runserver
 ```
 
-Open `http://127.0.0.1:8000`.
+Open http://127.0.0.1:8000/.
 
-### 2. Node workspaces
+## What it does
 
-Install dependencies for the extension stack:
+- Fetch a LeetCode problem by number, title, slug, or URL, or load the daily challenge.
+- Show the problem summary, examples, constraints, difficulty, and topics.
+- Save code drafts separately for each problem and language in the browser.
+- Generate hints, explanations, code reviews, complexity analysis, dry runs, and optimization advice through Groq.
+- Save a learning checkpoint, confidence, mistake category, and reflection using Django.
+- Schedule revisions after 1, 3, 7, 21, and 45 days. Later reviews repeat the 45-day interval.
 
-```bash
-npm install
-```
+The editor stores code; it does not execute or submit it to LeetCode. The full-solution mode is also supported by the assistant API. The dashboard provides links to ChatGPT and YouTube for additional help.
 
-Start the local API used by the Chrome extension:
+Without a working Groq connection, hints, explanations, and basic review checks have limited local fallbacks. Complexity, dry runs, optimization, and full solutions require the provider; the app does not substitute canned solutions for those actions.
 
-```bash
-npm run dev:server
-```
+## How the code works
 
-This serves the extension backend at `http://localhost:4000`.
+This is a normal Django project with function-based views and plain browser JavaScript.
 
-The server binds to `127.0.0.1` by default. Set `HOST` only when you intentionally need another interface, and use a comma-separated `CORS_ORIGIN` allowlist for any non-local web clients. Chrome extension origins and local development origins are handled automatically.
-
-### 3. Extension build
-
-Run the extension dev build:
-
-```bash
-npm run dev:extension
-```
-
-## API Surfaces
-
-### Django app
-
-| Route | Purpose |
+| File | Responsibility |
 | --- | --- |
-| `/api/health/` | Health check |
-| `/api/daily/` | Fetch the daily challenge |
-| `/api/problem/?identifier=...` | Resolve a problem by number, slug, title, or URL |
-| `/api/study/` | Save a learning review or load the session revision queue |
-| `/api/assistant/` | Generate mentor output for the web dashboard |
+| `leetcode_mentor_project/settings.py` | Environment, database, middleware, and static-file settings |
+| `leetcode_mentor_project/urls.py` | Connect the project to the mentor app and Django admin |
+| `mentor/urls.py` | Map each URL to its view |
+| `mentor/views.py` | Validate HTTP requests and return HTML or JSON |
+| `mentor/leetcode.py` | Fetch and parse LeetCode problem data; cache fetched problems in memory |
+| `mentor/services.py` | Validate mentor inputs, call Groq, and check the response |
+| `mentor/prompts.py` | Teaching instructions for the AI |
+| `mentor/models.py` | Store study records and schedule their first review |
+| `mentor/migrations/` | Create the database schema; keep these for new installations |
+| `mentor/tests.py` | Regression tests for services, endpoints, and study records |
+| `templates/base.html` | Shared page layout |
+| `templates/mentor/dashboard.html` | Problem loader, editor, learning review, and mentor controls |
+| `static/mentor/app.js` | Browser requests, rendering, local draft saving, and button handlers |
+| `static/mentor/dashboard.css` | Dashboard styles |
+| `static/js/app.js`, `static/css/app.css` | Shared navigation and page styles |
 
-### Extension API
+Read `mentor/urls.py`, then the matching function in `mentor/views.py`, then its service or model. This follows the same path as a user request.
 
-| Route | Purpose |
-| --- | --- |
-| `/api/leetcode/daily` | Daily challenge for the extension |
-| `/api/leetcode/problem/:identifier` | Problem lookup for the extension |
-| `/api/assistant/chat` | Mentor chat endpoint for the sidebar |
+### Example: loading Two Sum
 
-## Environment Notes
+1. The browser sends `GET /api/problem/?identifier=two-sum`.
+2. `problem_lookup()` calls `leetcode_service.get_problem()`.
+3. The service resolves the slug and checks its in-memory cache.
+4. If needed, it requests LeetCode GraphQL data and converts the HTML into plain text and example cards.
+5. `ProblemContext.to_dict()` supplies the browser's JSON field names.
+6. The browser renders the result and restores that problem's saved code draft.
 
-- `GROQ_API_KEY` is required for rich AI-generated responses.
-- Without that key, some local fallback logic still helps with hints or guardrails, but the full mentor experience is limited.
-- `AI_MODEL` defaults to `llama-3.3-70b-versatile`.
-- The extension and the Django dashboard are separate runtimes, so deploying the web app does not automatically deploy the extension backend.
-- `ASSISTANT_RATE_LIMIT` controls the Django dashboard's per-session request allowance (default: 20 requests per five minutes).
-- Invalid modes, oversized payloads, malformed provider data, and untrusted browser origins are rejected before they can reach the AI provider.
+### Example: asking for a hint
 
-## Verification
+1. The browser sends the problem, code, language, question, and hint level to `/api/assistant/`.
+2. The view checks JSON and request size, then applies the request limit.
+3. `AIService` validates the fields and builds the prompt using `prompts.py`.
+4. Groq returns the mentor answer. Limited local guidance is used if available when the provider fails.
+5. Django returns JSON and the browser displays the answer in the mentor dialog.
 
-Run the full local verification set with:
+### Study records and sessions
+
+`StudyRecord` has one row per browser session and problem slug. The view always filters by the server-managed session key, so a client cannot choose another user's records. Saving a solved, optimized, or mastered problem creates its first review date. Marking a review complete advances the schedule inside a database transaction. An expected stage prevents the same review from being advanced twice by a stale request.
+
+Code drafts and focus notes live in browser local storage. Learning reviews live in SQLite locally or PostgreSQL when `DATABASE_URL` is configured. Clearing browser data can remove drafts and access to the anonymous study session. There is no student account system.
+
+## API routes
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/` | GET | Dashboard |
+| `/api/health/` | GET | Lightweight readiness response |
+| `/api/daily/` | GET | Daily challenge |
+| `/api/problem/?identifier=...` | GET | Problem lookup |
+| `/api/study/?problem_slug=...` | GET | Session's study record and revision queue |
+| `/api/study/` | POST | Save a checkpoint or mark it reviewed |
+| `/api/assistant/` | POST | Mentor response |
+
+POST requests require Django's CSRF token. The assistant allows 20 requests per five minutes by default; change `ASSISTANT_RATE_LIMIT` to adjust this. The limiter and problem cache are in memory and separate in each server process.
+
+## Checks
 
 ```bash
-npm run typecheck
-npm run build
 python manage.py test
 python manage.py check
+python manage.py makemigrations --check --dry-run
+python manage.py collectstatic --noinput
 ```
 
-The Django suite covers endpoint validation, rate limiting, problem parsing, and safe offline guidance. The TypeScript build validates the server, shared contracts, popup/options UI, and loadable extension content-script bundle.
+Tests mock external providers so they can run without network access or an API key. They use a separate test database.
 
 ## Deployment
 
-The repository already includes production-oriented Django deployment pieces:
+`render.yaml`, `build.sh`, and `Procfile` configure the Django deployment. The existing `Dockerfile` is an alternative deployment entry point. Production requires `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=false`, allowed hosts, and `GROQ_API_KEY`. `DATABASE_URL` enables PostgreSQL; otherwise Django uses SQLite. WhiteNoise serves collected static files.
 
-- `gunicorn` as the app server
-- `whitenoise` for static assets
-- optional `DATABASE_URL` support
-- `build.sh` for build steps
-- `render.yaml` for a Render blueprint
+The Render build attempts migrations but permits deployment if the optional database is unavailable. In that situation, problem lookup and mentor requests can still work, but learning reviews require a healthy database and successful migrations. The health endpoint does not test database or external-provider availability.
 
-### Recommended path: Render
-
-1. Push the repository to GitHub.
-2. Create a new Blueprint in Render from the repo.
-3. Add the missing secret: `GROQ_API_KEY`.
-4. Deploy.
-
-The included blueprint provisions:
-
-- one Python web service
-- one PostgreSQL database
-- an HTTP health check at `/api/health/`
-
-The default branch also includes `.github/workflows/keep-render-awake.yml`, which
-pings the deployed health endpoint every 10 minutes. This prevents the usual
-15-minute idle spin-down on a free Render web service as long as scheduled
-GitHub Actions remain enabled. For guaranteed always-on hosting, use a paid
-Render web-service instance; free services can still be restarted by Render.
-
-Important production variables:
-
-```env
-DJANGO_DEBUG=false
-DJANGO_SECRET_KEY=generate_a_new_production_secret
-GROQ_API_KEY=your_real_groq_key
-AI_MODEL=llama-3.3-70b-versatile
-```
-
-`DATABASE_URL` is supplied automatically when you use the included Render blueprint.
-If that optional database is unavailable, deployment continues and the core problem
-and mentor flows remain usable; learning-review persistence resumes after a healthy
-database is connected and migrations run successfully.
-
-Manual commands:
+The Docker build needs a temporary `DJANGO_SECRET_KEY` for static collection; provide real production settings when running the container. For example:
 
 ```bash
-./build.sh
-gunicorn leetcode_mentor_project.wsgi:application --bind 0.0.0.0:$PORT --timeout 90 --graceful-timeout 30 --keep-alive 5
+docker build -t leetmentor .
+docker run --env-file .env -p 8000:8000 leetmentor
 ```
 
-## Current Stack
-
-- Django for the standalone coding workspace
-- HTML, CSS, and vanilla JS for the dashboard shell
-- React and TypeScript for the Chrome extension UI
-- Express for the extension API
-- Groq for mentor responses
-- LeetCode GraphQL and problem index endpoints for problem data
-- SQLite locally, with PostgreSQL support in deployment
-- shared TypeScript contracts in `packages/shared`
-
-## Roadmap
-
-```mermaid
-flowchart LR
-    A["Current foundation"] --> B["Stronger hint ladder"]
-    A --> C["Session export and progress summaries"]
-    A --> D["Language-aware code review"]
-    A --> E["Monaco editor polish"]
-    A --> F["More automated tests"]
-    A --> G["Optional hosted extension backend"]
-
-    classDef future fill:#172554,stroke:#60a5fa,color:#dbeafe;
-    class A,B,C,D,E,F,G future;
-```
-
-## Bottom Line
-
-LeetMentor is designed to keep students inside the real interview-prep loop: read, think, code, ask, revise, and understand. The README should reflect that same idea, so the docs now explain both the teaching model and the actual system boundaries clearly enough for a contributor, reviewer, or recruiter to understand the product fast.
+The container runs migrations at startup; mount persistent storage for SQLite or configure PostgreSQL to retain learning reviews across container replacement.

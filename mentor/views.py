@@ -16,7 +16,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from .models import StudyRecord, review_interval_for_stage
-from .services import ai_service, leetcode_service
+from .leetcode import leetcode_service
+from .services import ai_service
 
 
 logger = logging.getLogger(__name__)
@@ -118,11 +119,10 @@ def _study_payload(request: HttpRequest) -> dict[str, object]:
     return payload
 
 
-def _validated_study_updates(payload: dict[str, object], *, creating: bool) -> dict[str, object]:
+def _validated_study_updates(payload: dict[str, object]) -> dict[str, object]:
+    """Validate supplied fields; missing fields stay unchanged on partial updates."""
     updates: dict[str, object] = {}
     title = _optional_string(payload, "problemTitle", 300, allow_blank=False)
-    if creating and title is None:
-        raise StudyValidationError("problemTitle is required.")
     if title is not None:
         updates["problem_title"] = title
 
@@ -233,7 +233,7 @@ def study_records(request: HttpRequest) -> JsonResponse:
                     )
                 )
         else:
-            updates = _validated_study_updates(payload, creating=False)
+            updates = _validated_study_updates(payload)
             with transaction.atomic():
                 record, created = StudyRecord.objects.select_for_update().get_or_create(
                     session_key=session_key,
@@ -296,14 +296,7 @@ def _assistant_retry_after(request: HttpRequest) -> int | None:
 
 @ensure_csrf_cookie
 def home(request: HttpRequest):
-    return render(
-        request,
-        "mentor/dashboard.html",
-        {
-            "default_language": "C++",
-            "default_model": "llama-3.3-70b-versatile",
-        },
-    )
+    return render(request, "mentor/dashboard.html")
 
 
 @require_GET

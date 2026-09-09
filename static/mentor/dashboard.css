@@ -656,7 +656,6 @@
 }
 
 .review-queue__actions .button,
-.review-queue__actions a,
 .review-queue [data-review-slug],
 .review-queue [data-study-load-slug] {
   width: 100%;
@@ -668,27 +667,6 @@
   overflow-wrap: anywhere;
   white-space: normal;
   text-align: center;
-}
-
-.review-queue__actions a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(146, 177, 206, 0.18);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.02);
-  color: var(--text-secondary);
-  font-weight: 650;
-  line-height: 1.2;
-  text-decoration: none;
-  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
-}
-
-.review-queue__actions a:hover,
-.review-queue__actions a:focus-visible {
-  border-color: rgba(146, 177, 206, 0.32);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text);
 }
 
 #problem-context,
@@ -1137,13 +1115,11 @@ body.mentor-response-is-open {
   font-size: 15px;
 }
 
-.mentor-shell--response-open .mentor-response-backdrop,
 body.mentor-response-is-open .mentor-response-backdrop {
   opacity: 1;
   pointer-events: auto;
 }
 
-.mentor-shell--response-open .mentor-response,
 body.mentor-response-is-open .mentor-response {
   display: grid;
   position: fixed;
@@ -1163,7 +1139,6 @@ body.mentor-response-is-open .mentor-response {
   transform: translate(-50%, -50%);
 }
 
-.mentor-shell--response-open .mentor-response .response-box,
 body.mentor-response-is-open .mentor-response .response-box {
   min-height: 0;
   height: 100%;
@@ -1399,7 +1374,6 @@ body.mentor-response-is-open .mentor-response .response-box {
     padding: 18px;
   }
 
-  .mentor-shell--response-open .mentor-response,
   body.mentor-response-is-open .mentor-response {
     top: 50%;
     right: auto;

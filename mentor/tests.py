@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from django.contrib.staticfiles import finders
 from django.db import IntegrityError, transaction
 from django.test import Client, SimpleTestCase, TestCase
 from django.utils import timezone
 
 from .models import StudyRecord
-from .services import AIService, LeetCodeService
+from .leetcode import LeetCodeService
+from .services import AIService
+from .prompts import MODE_GUIDANCE
 from . import views
 
 
@@ -384,3 +387,120 @@ class StudyEndpointTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 403)
+
+
+class ProviderFlowTests(SimpleTestCase):
+    """Exercise the public service methods after separating the two providers."""
+
+    def setUp(self):
+        self.question = {
+            "title": "Two Sum",
+            "titleSlug": "two-sum",
+            "questionFrontendId": "1",
+            "difficulty": "Easy",
+            "topicTags": [{"name": "Hash Table"}],
+            "stats": '{"acRate": "50.5%"}',
+            "content": "<p>Find two numbers with the required sum.</p>",
+        }
+        self.problem = {
+            "title": "Two Sum",
+            "titleSlug": "two-sum",
+            "statement": "Find two numbers with the required sum.",
+            "examples": [],
+            "constraints": [],
+            "tags": ["Hash Table"],
+        }
+
+    @patch("mentor.leetcode.requests.post")
+    def test_problem_mapping_and_cache_reuse(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {"data": {"question": self.question}}
+        service = LeetCodeService()
+        problem = service.get_problem("two-sum")
+        self.assertEqual(problem.to_dict()["titleSlug"], "two-sum")
+        self.assertEqual(problem.acceptance_rate, 50.5)
+        self.assertEqual(problem.statement, "Find two numbers with the required sum.")
+        for identifier in ("1", "Two Sum", "https://leetcode.com/problems/two-sum/"):
+            self.assertIs(service.get_problem(identifier), problem)
+        post.assert_called_once()
+
+    @patch("mentor.leetcode.requests.post")
+    def test_daily_problem_also_populates_cache(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.return_value = {
+            "data": {"activeDailyCodingChallengeQuestion": {
+                "question": self.question, "link": "/problems/two-sum/"
+            }}
+        }
+        service = LeetCodeService()
+        daily = service.get_daily_challenge()
+        self.assertEqual(daily.link, "https://leetcode.com/problems/two-sum/")
+        self.assertIs(service.get_problem("1"), daily)
+        post.assert_called_once()
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
+    @patch("mentor.services.requests.post")
+    def test_all_supported_modes_still_reach_groq(self, post):
+        service = AIService()
+        for mode in MODE_GUIDANCE:
+            with self.subTest(mode=mode):
+                post.reset_mock()
+                post.return_value = Mock(status_code=200)
+                post.return_value.json.return_value = {
+                    "choices": [{"message": {"content": "A provider response."}}]
+                }
+                response = service.generate_assistant_response({
+                    "mode": mode, "problem": self.problem,
+                    "language": "Python", "userCode": "return []",
+                })
+                self.assertTrue(response["answer"])
+                self.assertTrue(response["suggestedNextStep"])
+                post.assert_called_once()
+                prompt = post.call_args.kwargs["json"]["messages"][1]["content"]
+                self.assertIn("Two Sum", prompt)
+                self.assertIn("return []", prompt)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": ""})
+    @patch("mentor.services.requests.post")
+    def test_only_supported_offline_modes_have_fallbacks(self, post):
+        service = AIService()
+        for mode in ("hint", "explain", "debug"):
+            with self.subTest(mode=mode):
+                response = service.generate_assistant_response({
+                    "mode": mode, "problem": self.problem,
+                    "language": "Python", "userCode": "return []",
+                })
+                self.assertTrue(response["answer"])
+        for mode in ("complexity", "dry_run", "optimize", "full_solution"):
+            with self.subTest(mode=mode):
+                with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
+                    service.generate_assistant_response({"mode": mode, "problem": self.problem})
+        post.assert_not_called()
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
+    @patch("mentor.services.AIService._request_groq", side_effect=ValueError("Provider unavailable"))
+    def test_hint_fallback_keeps_working_after_provider_failure(self, request_groq):
+        response = AIService().generate_assistant_response({
+            "mode": "hint", "problem": self.problem, "hintLevel": 1,
+        })
+        self.assertIn("### Starting hint", response["answer"])
+        request_groq.assert_called_once()
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
+    @patch("mentor.services.requests.post")
+    def test_unavailable_model_tries_next_candidate(self, post):
+        rejected = Mock(status_code=404, text="model not found")
+        accepted = Mock(status_code=200)
+        accepted.json.return_value = {"choices": [{"message": {"content": "Provider solution"}}]}
+        post.side_effect = [rejected, accepted]
+        response = AIService().generate_assistant_response({"mode": "full_solution", "problem": self.problem})
+        self.assertEqual(response["answer"], "Provider solution")
+        self.assertEqual(post.call_count, 2)
+
+
+class WebAssetTests(SimpleTestCase):
+    def test_dashboard_assets_are_available_without_node_build(self):
+        for name in ("brand/leetmentor-mark.svg", "css/app.css", "js/app.js",
+                     "mentor/dashboard.css", "mentor/app.js"):
+            with self.subTest(asset=name):
+                self.assertIsNotNone(finders.find(name))

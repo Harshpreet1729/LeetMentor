@@ -1,4 +1,5 @@
 (function () {
+  // Current problem, editor state, and pending requests.
   const state = {
     problem: null,
     activeMode: "hint",
@@ -27,7 +28,6 @@
 
   const byId = (id) => document.getElementById(id);
   const els = {
-    mentorShell: byId("mentor-output"),
     mentorResponsePanel: byId("mentorResponsePanel"),
     mentorResponseBackdrop: byId("mentorResponseBackdrop"),
     problemIdentifier: byId("problemIdentifier"),
@@ -44,8 +44,6 @@
     problemDetails: document.querySelector("#problem-context .detail-toggle"),
     problemExamples: byId("problemExamples"),
     problemConstraints: byId("problemConstraints"),
-    contextTabs: Array.from(document.querySelectorAll("[data-context-tab]")),
-    contextPanels: Array.from(document.querySelectorAll("[data-context-panel]")),
     tagList: byId("tagList"),
     codeInput: byId("codeInput"),
     editorFilename: byId("editorFilename"),
@@ -98,7 +96,7 @@
     if (!element) {
       return;
     }
-    element.classList.remove("status-banner--neutral", "status-banner--loading", "status-banner--success", "status-banner--error");
+    element.classList.remove("status-banner--neutral", "status-banner--loading", "status-banner--success", "status-banner--warning", "status-banner--error");
     element.classList.add(`status-banner--${tone}`);
   }
 
@@ -124,7 +122,7 @@
   }
 
   function setResponsePopoverOpen(isOpen, options = {}) {
-    if (!els.mentorShell || !els.mentorResponsePanel) {
+    if (!els.mentorResponsePanel) {
       return;
     }
 
@@ -133,7 +131,6 @@
       state.responseTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     }
 
-    els.mentorShell.classList.toggle("mentor-shell--response-open", isOpen);
     document.body.classList.toggle("mentor-response-is-open", isOpen);
     setHidden(els.closeOutputBtn, !isOpen);
     els.mentorResponsePanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
@@ -157,15 +154,7 @@
     }
   }
 
-  function setContextTab(tabName) {
-    els.contextTabs.forEach((button) => {
-      button.classList.toggle("active", button.getAttribute("data-context-tab") === tabName);
-    });
-    els.contextPanels.forEach((panel) => {
-      panel.classList.toggle("hidden", panel.getAttribute("data-context-panel") !== tabName);
-    });
-  }
-
+  // Escape provider text before adding simple Markdown formatting.
   function escapeHtml(text) {
     return text
       .replace(/&/g, "&amp;")
@@ -202,7 +191,7 @@
 
   function renderList(lines, ordered) {
     const tag = ordered ? "ol" : "ul";
-    const items = lines.map((line, index) => {
+    const items = lines.map((line) => {
       const content = ordered
         ? line.replace(/^\d+\.\s+/, "")
         : line.replace(/^[-*]\s+/, "");
@@ -390,6 +379,7 @@
     els.problemStatementPreview.innerHTML = renderTechnicalInline(problemPreviewText(problem));
   }
 
+  // Drafts belong to one problem and language, not to the whole workspace.
   function draftStorageKey(problem, language) {
     const slug = problem?.titleSlug || "scratchpad";
     return `leetmentor.draft.v2.${encodeURIComponent(slug)}.${encodeURIComponent(language || "C++")}`;
@@ -581,6 +571,7 @@
     return cookie ? decodeURIComponent(cookie.split("=")[1]) : "";
   }
 
+  // Learning reviews are saved in Django and belong to the browser session.
   const studyStatusLabels = {
     started: "Started",
     understood: "Problem understood",
@@ -842,64 +833,7 @@
     }
   }
 
-  function legacySetProblem(problem) {
-    state.problem = problem;
-    const tags = (problem.tags || []).join(", ");
-    setText(els.problemTitle, problem.title ? `${problem.questionFrontendId}. ${problem.title}` : "Unknown problem");
-    renderProblemPreview(problem);
-    setText(
-      els.problemStatement,
-      problem.title
-        ? `Difficulty: ${problem.difficulty || "Unknown"}${tags ? ` • Topics: ${tags}` : ""}`
-        : "Full statement stays on LeetCode. Load a problem here to see its title, difficulty, and topic tags."
-    );
-    setText(
-      els.workspaceProblemMeta,
-      problem.title
-        ? `${problem.questionFrontendId}. ${problem.title} · ${problem.difficulty || "Unknown"}${(problem.tags || []).length ? ` · ${(problem.tags || []).slice(0, 3).join(" · ")}` : ""}`
-        : "Load a problem to begin a guided practice session."
-    );
-    if (problem.title) {
-      setText(
-        els.problemStatement,
-        `Difficulty: ${problem.difficulty || "Unknown"}${tags ? ` - Topics: ${tags}` : ""}`
-      );
-      setText(
-        els.workspaceProblemMeta,
-        `${problem.questionFrontendId}. ${problem.title} - ${problem.difficulty || "Unknown"}${(problem.tags || []).length ? ` - ${(problem.tags || []).slice(0, 3).join(" - ")}` : ""}`
-      );
-    }
-    renderProblemExamples(problem.exampleCards, problem.examples);
-    renderProblemConstraints(problem.constraints);
-    setContextTab("statement");
-
-    if (problem.link) {
-      els.problemLink.href = problem.link;
-      els.problemLink.classList.remove("hidden");
-      setText(els.problemLink, "Open on LeetCode");
-    } else {
-      els.problemLink.removeAttribute("href");
-      els.problemLink.classList.add("hidden");
-    }
-
-    if (problem.difficulty) {
-      setText(els.difficultyBadge, problem.difficulty);
-      els.difficultyBadge.classList.remove("hidden");
-    } else {
-      setText(els.difficultyBadge, "");
-      els.difficultyBadge.classList.add("hidden");
-    }
-
-    els.tagList.innerHTML = "";
-    (problem.tags || []).forEach((tag) => {
-      const chip = document.createElement("span");
-      chip.className = "tag";
-      chip.textContent = tag;
-      els.tagList.appendChild(chip);
-    });
-    saveWorkspaceSnapshot();
-  }
-
+  // Render a loaded problem and restore its own saved draft.
   function applyProblemState(problem, options = {}) {
     const previousProblem = state.problem;
     const isDifferentProblem = previousProblem?.titleSlug !== problem?.titleSlug;
@@ -937,7 +871,6 @@
     setHidden(els.problemDetails, !hasExpandedContext);
     renderProblemExamples(problem.exampleCards, problem.examples);
     renderProblemConstraints(problem.constraints);
-    setContextTab("statement");
 
     if (problem.link) {
       els.problemLink.href = problem.link;
@@ -1034,6 +967,7 @@
     );
   }
 
+  // Shared JSON request helper with a timeout and readable errors.
   async function fetchJson(url, options, timeoutMs = 25000) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -1330,17 +1264,12 @@
     }
   }
 
+  // Connect the controls to the functions above.
   els.modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const mode = button.getAttribute("data-mode");
       setActiveMode(mode);
       runAssistant(mode);
-    });
-  });
-
-  els.contextTabs.forEach((button) => {
-    button.addEventListener("click", () => {
-      setContextTab(button.getAttribute("data-context-tab"));
     });
   });
 
@@ -1487,7 +1416,6 @@
   });
 
   setActiveMode("hint");
-  setContextTab("statement");
   restoreWorkspaceSnapshot();
   if (!state.problem) {
     void loadStudyData(null);
