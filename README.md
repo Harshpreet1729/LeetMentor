@@ -62,11 +62,59 @@ This is a normal Django project with function-based views and plain browser Java
 | `mentor/tests.py` | Regression tests for services, endpoints, and study records |
 | `templates/base.html` | Shared page layout |
 | `templates/mentor/dashboard.html` | Problem loader, editor, learning review, and mentor controls |
-| `static/mentor/app.js` | Browser requests, rendering, local draft saving, and button handlers |
+| `static/mentor/app.js` | Entry point: connect buttons and restore the workspace |
+| `static/mentor/workspace.js` | Page elements, shared state, and small display helpers |
+| `static/mentor/problems.js` | Load and display a problem or daily challenge |
+| `static/mentor/assistant.js` | Request AI help, manage the response dialog, and open external help |
+| `static/mentor/drafts.js` | Save and restore browser drafts and preferences |
+| `static/mentor/study.js` | Save learning checkpoints and display the revision queue |
+| `static/mentor/api.js` | JSON requests, CSRF headers, timeouts, and server wake retries |
+| `static/mentor/rendering.js` | Safely format examples, constraints, and AI responses |
 | `static/mentor/dashboard.css` | Dashboard styles |
 | `static/js/app.js`, `static/css/app.css` | Shared navigation and page styles |
 
 Read `mentor/urls.py`, then the matching function in `mentor/views.py`, then its service or model. This follows the same path as a user request.
+
+### JavaScript reading order
+
+The dashboard loads `app.js` using `<script type="module">`. Each `import` names the
+functions a file uses, much like Python imports. The browser loads these files
+directly; there is no package installation or JavaScript build step. The parent
+template's separate `static/js/app.js` still handles shared navigation.
+
+Read one user action at a time, rather than memorizing every helper:
+
+1. **`workspace.js`**: look at `elements` (HTML elements found by ID) and `state`
+   (the current problem, language, and pending requests). Skim the display helpers.
+2. **`app.js`**: find the Load button's `addEventListener`. It calls `loadProblem`.
+   The final section restores the last workspace when the page opens.
+3. **`problems.js`**: follow `loadProblem` -> `loadProblemRequest` ->
+   `applyProblemState`. The last function displays the problem, restores its draft,
+   and asks `study.js` to load its learning record.
+4. **`api.js`**: read `fetchJson` and `postJson`. GET receives data; POST sends an
+   object encoded as JSON with a CSRF header. Read wake/retry helpers afterward.
+5. **`assistant.js`**: follow `runAssistant`: validate the inputs, build the payload,
+   call Django, and display the response. Dialog and external-link helpers are separate.
+6. **`drafts.js`**: follow `saveDraftFor` and `restoreDraftFor`. The storage key
+   includes the problem slug and language. `restoreWorkspaceSnapshot` returns saved
+   problem data to `app.js`; storage code does not load problems itself.
+7. **`study.js`**: follow `loadStudyData`, `saveStudyRecord`, and `markStudyReviewed`.
+   The version checks ignore old responses after you change the selected problem.
+8. **`rendering.js`**: read last. It formats text for display and escapes HTML from
+   external content. These formatting details are separate from the request flow.
+
+For each function, answer: who calls it, what enters it, what it does, and what it
+returns or changes on the page. A useful first exercise is tracing a hint from the
+button in `app.js` to `runAssistant`, `postJson`, Django's `assistant_chat`, and back
+to `renderAssistantOutput`.
+
+The earlier PDF describes the pre-refactor JavaScript layout. Most function names
+remain the same; use this table to find their new files. The feature logic remains
+plain JavaScript; separating it makes the reading path smaller, not the features fewer.
+
+Module imports include a release query string to refresh browser caches. When
+changing shared modules for deployment, update that version in the imports and the
+dashboard's script tag together, then run `collectstatic`.
 
 ### Example: loading Two Sum
 
