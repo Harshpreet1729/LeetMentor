@@ -1,6 +1,3 @@
-// Shared page elements, current workspace state, and small display helpers.
-
-// Current problem, editor state, and pending requests.
 export const state = {
   problem: null,
   activeMode: "hint",

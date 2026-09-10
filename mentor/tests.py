@@ -9,7 +9,7 @@ from django.db import IntegrityError, transaction
 from django.test import Client, SimpleTestCase, TestCase
 from django.utils import timezone
 
-from .models import StudyRecord
+from .models import StudyRecord, review_interval_for_stage
 from .leetcode import LeetCodeService
 from .services import AIService
 from .prompts import MODE_GUIDANCE
@@ -390,8 +390,6 @@ class StudyEndpointTests(TestCase):
 
 
 class ProviderFlowTests(SimpleTestCase):
-    """Exercise the public service methods after separating the two providers."""
-
     def setUp(self):
         self.question = {
             "title": "Two Sum",
@@ -501,6 +499,79 @@ class ProviderFlowTests(SimpleTestCase):
 class WebAssetTests(SimpleTestCase):
     def test_dashboard_assets_are_available_without_node_build(self):
         for name in ("brand/leetmentor-mark.svg", "css/app.css", "js/app.js",
-                     "mentor/dashboard.css", "mentor/app.js"):
+                     "mentor/dashboard.css", "mentor/app.js", "mentor/workspace.js",
+                     "mentor/api.js", "mentor/problems.js", "mentor/assistant.js",
+                     "mentor/drafts.js", "mentor/study.js", "mentor/rendering.js"):
             with self.subTest(asset=name):
                 self.assertIsNotNone(finders.find(name))
+
+
+class ReadabilityRegressionTests(SimpleTestCase):
+    def test_review_intervals_keep_the_same_boundaries(self):
+        for stage, days in [(-1, 1), (0, 1), (1, 3), (2, 7), (3, 21), (4, 45), (9, 45)]:
+            with self.subTest(stage=stage):
+                self.assertEqual(review_interval_for_stage(stage), timedelta(days=days))
+
+    def test_problem_number_and_title_use_index_before_search(self):
+        service = LeetCodeService()
+        service.problem_index_cache = [
+            {"frontendId": "1", "title": "Two Sum", "titleSlug": "two-sum"}
+        ]
+        with patch.object(service, "_search_slug") as search:
+            self.assertEqual(service._resolve_slug("1"), "two-sum")
+            self.assertEqual(service._resolve_slug("Two Sum"), "two-sum")
+        search.assert_not_called()
+
+    def test_failed_search_can_normalize_a_title_but_not_guess_a_number(self):
+        service = LeetCodeService()
+        service.problem_index_cache = []
+        with patch.object(service, "_search_slug", side_effect=ValueError("Unavailable")):
+            self.assertEqual(service._resolve_slug("  Two   Sum?!  "), "two-sum")
+            with self.assertRaisesMessage(ValueError, "Problem number lookup failed"):
+                service._resolve_slug("12345")
+
+    def test_hint_templates_preserve_title_and_sample_text(self):
+        problem = {
+            "title": "Problem {title}", "statement": "Do the task.",
+            "tags": [], "examples": ["Input: {sample} -> Output: 1"],
+        }
+        answer = AIService()._generate_progressive_hint(problem, 1)
+        self.assertIn("Problem {title}", answer)
+        self.assertIn("Input: {sample} -> Output: 1", answer)
+        self.assertIn("### Starter cue", answer)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
+    def test_invalid_provider_hint_uses_same_fallback_as_provider_failure(self):
+        service = AIService()
+        payload = {"mode": "hint", "hintLevel": 2, "problem": {"title": "Example", "tags": ["binary search"]}}
+        with patch.object(service, "_request_groq", return_value="```python\nprint(1)\n```"):
+            invalid_answer = service.generate_assistant_response(payload)
+        with patch.object(service, "_request_groq", side_effect=ValueError("Unavailable")):
+            failed_answer = service.generate_assistant_response(payload)
+        self.assertEqual(invalid_answer, failed_answer)
+        self.assertIn("### Directional hint", failed_answer["answer"])
+
+    @patch.dict("os.environ", {"AI_MODEL": " llama-3.1-8b-instant "})
+    def test_configured_model_is_first_without_duplicate_fallbacks(self):
+        self.assertEqual(AIService()._candidate_models(), [
+            "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b",
+        ])
+
+
+class StudySaveRegressionTests(TestCase):
+    def test_invalid_new_record_is_rolled_back(self):
+        response = self.client.post("/api/study/", {
+            "problemSlug": "two-sum", "status": "solved",
+        }, content_type="application/json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["message"], "problemTitle is required.")
+        self.assertFalse(StudyRecord.objects.exists())
+
+    def test_both_post_endpoints_reject_malformed_json_without_calling_ai(self):
+        with patch("mentor.views.ai_service.generate_assistant_response") as generate:
+            for url in ("/api/study/", "/api/assistant/"):
+                with self.subTest(url=url):
+                    response = self.client.post(url, '{"broken":}', content_type="application/json")
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.json(), {"ok": False, "message": "Invalid JSON body."})
+        generate.assert_not_called()

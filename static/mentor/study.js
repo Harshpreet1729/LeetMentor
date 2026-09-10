@@ -1,8 +1,5 @@
-// Load and save learning checkpoints and the review queue through Django.
-import { state, elements, setText, setStatusTone } from "./workspace.js?v=20260910-readability";
-import { fetchJson, postJson } from "./api.js?v=20260910-readability";
-
-// Learning reviews are saved in Django and belong to the browser session.
+import { state, elements, setText, setStatusTone } from "./workspace.js?v=20260910-cleanup";
+import { fetchJson, postJson } from "./api.js?v=20260910-cleanup";
 const studyStatusLabels = {
   started: "Started",
   understood: "Problem understood",
@@ -55,9 +52,7 @@ function applyStudyRecord(record) {
   elements.studyReflection.value = record?.reflection || "";
   setText(
     elements.studyNextReview,
-    record
-      ? formatReviewDate(record.nextReviewAt, Boolean(record.due))
-      : "Reach a working solution to start spaced revision."
+    formatReviewDate(record?.nextReviewAt, Boolean(record?.due))
   );
   setText(
     elements.studySaveStatus,

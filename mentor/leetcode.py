@@ -1,5 +1,3 @@
-"""Fetch LeetCode problems and turn their HTML into dashboard data."""
-
 import json
 import os
 import re
@@ -106,8 +104,6 @@ class ProblemContext:
 
 
 class LeetCodeService:
-    """Resolve a number, title, slug, or URL; reuse fetched problems in memory."""
-
     def __init__(self) -> None:
         self.cache: dict[str, ProblemContext] = {}
         self.problem_index_cache: list[dict[str, str]] | None = None
@@ -146,48 +142,50 @@ class LeetCodeService:
 
     def _resolve_slug(self, identifier: str) -> str:
         if identifier.startswith("http"):
-            parsed = urlparse(identifier)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValueError("Invalid URL. Please paste a valid LeetCode problem URL.")
-            if "leetcode.com" not in parsed.netloc.lower():
-                raise ValueError("Invalid URL. Only LeetCode problem URLs are supported.")
+            return self._slug_from_url(identifier)
 
-            parts = [part for part in parsed.path.split("/") if part]
-            if "problems" in parts:
-                index = parts.index("problems")
-                if index + 1 < len(parts):
-                    return parts[index + 1]
-            raise ValueError("Invalid URL. Expected a LeetCode problem URL like https://leetcode.com/problems/two-sum/.")
-
-        if re.fullmatch(r"[a-z0-9-]+", identifier, flags=re.IGNORECASE) and not identifier.isdigit():
+        is_slug = re.fullmatch(r"[a-z0-9-]+", identifier, flags=re.IGNORECASE)
+        if is_slug and not identifier.isdigit():
             return identifier.lower()
 
-        indexed_slug = self._lookup_slug_from_problem_index(identifier)
-        if indexed_slug:
-            return indexed_slug
-
+        slug = self._lookup_slug_from_problem_index(identifier)
+        if slug:
+            return slug
         try:
-            search_slug = self._search_slug(identifier)
-            if search_slug:
-                return search_slug
+            slug = self._search_slug(identifier)
         except ValueError:
-            pass
-
+            slug = None
+        if slug:
+            return slug
         if identifier.isdigit():
             raise ValueError("Problem number lookup failed. Try the title, slug, or URL.")
+        return self._title_to_slug(identifier)
 
-        return re.sub(r"\s+", "-", re.sub(r"[^a-z0-9\s-]", "", identifier.lower()).strip())
+    def _slug_from_url(self, url: str) -> str:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("Invalid URL. Please paste a valid LeetCode problem URL.")
+        if "leetcode.com" not in parsed.netloc.lower():
+            raise ValueError("Invalid URL. Only LeetCode problem URLs are supported.")
+
+        parts = [part for part in parsed.path.split("/") if part]
+        if "problems" in parts:
+            index = parts.index("problems")
+            if index + 1 < len(parts):
+                return parts[index + 1]
+        raise ValueError("Invalid URL. Expected a LeetCode problem URL like https://leetcode.com/problems/two-sum/.")
+
+    def _title_to_slug(self, title: str) -> str:
+        cleaned_title = re.sub(r"[^a-z0-9\s-]", "", title.lower())
+        return "-".join(cleaned_title.split())
 
     def _lookup_slug_from_problem_index(self, identifier: str) -> str | None:
         normalized = identifier.strip().lower()
         for entry in self._get_problem_index():
             normalized_title = entry["title"].lower()
-            slug_like_title = re.sub(r"\s+", "-", re.sub(r"[^a-z0-9\s-]", "", normalized_title).strip())
-            if (
-                entry["frontendId"] == normalized
-                or entry["titleSlug"].lower() == normalized
-                or normalized_title == normalized
-                or slug_like_title == normalized
+            slug_like_title = self._title_to_slug(normalized_title)
+            if normalized in (
+                entry["frontendId"], entry["titleSlug"].lower(), normalized_title, slug_like_title
             ):
                 return entry["titleSlug"]
         return None
@@ -204,10 +202,7 @@ class LeetCodeService:
             )
             response.raise_for_status()
             data = response.json()
-        except requests.RequestException:
-            self.problem_index_cache = []
-            return self.problem_index_cache
-        except ValueError:
+        except (requests.RequestException, ValueError):
             self.problem_index_cache = []
             return self.problem_index_cache
 
@@ -311,52 +306,38 @@ class LeetCodeService:
         if not cleaned:
             return None
 
-        sections: dict[str, str] = {}
-        labels = ("Input", "Output", "Explanation")
-        for label in labels:
-            match = re.search(
+        sections = {}
+        remaining_text = cleaned
+        for label in ("Input", "Output", "Explanation"):
+            pattern = re.compile(
                 rf"{label}\s*:\s*([\s\S]*?)(?=(?:Input|Output|Explanation)\s*:|$)",
-                cleaned,
                 flags=re.IGNORECASE,
             )
+            match = pattern.search(cleaned)
             if match:
                 sections[label.lower()] = self._normalize_problem_text(match.group(1))
+            remaining_text = pattern.sub("", remaining_text)
 
-        if sections:
-            consumed = cleaned
-            for label in labels:
-                consumed = re.sub(
-                    rf"{label}\s*:\s*([\s\S]*?)(?=(?:Input|Output|Explanation)\s*:|$)",
-                    "",
-                    consumed,
-                    flags=re.IGNORECASE,
-                )
-            notes = [line.strip(" -") for line in self._normalize_problem_text(consumed).splitlines() if line.strip(" -")]
-            card = {
-                "title": f"Example {number}",
-                "input": sections.get("input", ""),
-                "output": sections.get("output", ""),
-                "explanation": sections.get("explanation", ""),
-                "notes": notes,
-            }
-            return card
+        if not sections:
+            lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+            return {"title": f"Example {number}", "body": "\n".join(lines)}
 
-        lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+        note_lines = self._normalize_problem_text(remaining_text).splitlines()
+        notes = [line.strip(" -") for line in note_lines if line.strip(" -")]
         return {
             "title": f"Example {number}",
-            "body": "\n".join(lines),
+            "input": sections.get("input", ""),
+            "output": sections.get("output", ""),
+            "explanation": sections.get("explanation", ""),
+            "notes": notes,
         }
 
     def _example_card_to_text(self, card: dict[str, Any]) -> str:
         pieces = [card.get("title", "Example")]
-        if card.get("input"):
-            pieces.append(f"Input: {card['input']}")
-        if card.get("output"):
-            pieces.append(f"Output: {card['output']}")
-        if card.get("explanation"):
-            pieces.append(f"Explanation: {card['explanation']}")
-        for note in card.get("notes") or []:
-            pieces.append(note)
+        for field in ("input", "output", "explanation"):
+            if card.get(field):
+                pieces.append(f"{field.capitalize()}: {card[field]}")
+        pieces.extend(card.get("notes") or [])
         if card.get("body"):
             pieces.append(card["body"])
         return "\n".join(piece for piece in pieces if piece)

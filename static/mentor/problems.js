@@ -1,4 +1,3 @@
-// Load a LeetCode problem and update its details, draft, and study record.
 import {
   state,
   elements,
@@ -6,17 +5,15 @@ import {
   setHidden,
   setStatusTone,
   setBusy
-} from "./workspace.js?v=20260910-readability";
+} from "./workspace.js?v=20260910-cleanup";
 import {
   renderProblemExamples,
   renderProblemConstraints,
   renderProblemPreview
-} from "./rendering.js?v=20260910-readability";
-import { saveDraftFor, restoreDraftFor, saveWorkspaceSnapshot } from "./drafts.js?v=20260910-readability";
-import { isLeetCodeReachabilityError, fetchJson, runWithWakeRetry } from "./api.js?v=20260910-readability";
-import { loadStudyData } from "./study.js?v=20260910-readability";
-
-// Render a loaded problem and restore its own saved draft.
+} from "./rendering.js?v=20260910-cleanup";
+import { saveDraftFor, restoreDraftFor, saveWorkspaceSnapshot } from "./drafts.js?v=20260910-cleanup";
+import { isLeetCodeReachabilityError, fetchJson, runWithWakeRetry } from "./api.js?v=20260910-cleanup";
+import { loadStudyData } from "./study.js?v=20260910-cleanup";
 export function applyProblemState(problem, options = {}) {
   const previousProblem = state.problem;
   const isDifferentProblem = previousProblem?.titleSlug !== problem?.titleSlug;
@@ -85,8 +82,6 @@ export function applyProblemState(problem, options = {}) {
   saveWorkspaceSnapshot();
   void loadStudyData(problem.titleSlug);
 }
-
-// Both buttons use the same request/render flow, with different URLs and messages.
 export function loadDaily() {
   return loadProblemRequest("/api/daily/", true);
 }

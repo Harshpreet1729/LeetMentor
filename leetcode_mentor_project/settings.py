@@ -22,7 +22,14 @@ def load_env_file(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        os.environ.setdefault(key, value)
+
+
+def env_list(name: str, default: str = "") -> list[str]:
+    values = os.environ.get(name, default).split(",")
+    return [value.strip() for value in values if value.strip()]
 
 
 load_env_file(BASE_DIR / ".env")
@@ -34,7 +41,7 @@ if not SECRET_KEY:
         SECRET_KEY = "dev-only-secret-key-change-me"
     else:
         raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false.")
-ALLOWED_HOSTS = [host.strip() for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver").split(",") if host.strip()]
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver")
 for dev_host in ("testserver", "127.0.0.1", "localhost"):
     if dev_host not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(dev_host)
@@ -44,16 +51,10 @@ platform_hostnames = {
     os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip(),
 }
 platform_hostnames.discard("")
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 for platform_hostname in platform_hostnames:
     if platform_hostname not in ALLOWED_HOSTS:
         ALLOWED_HOSTS.append(platform_hostname)
-
-CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origin.strip()
-]
-for platform_hostname in platform_hostnames:
     platform_origin = f"https://{platform_hostname}"
     if platform_origin not in CSRF_TRUSTED_ORIGINS:
         CSRF_TRUSTED_ORIGINS.append(platform_origin)

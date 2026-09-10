@@ -1,4 +1,3 @@
-// Request AI guidance, show the response dialog, and open external help.
 import {
   state,
   elements,
@@ -6,9 +5,9 @@ import {
   setHidden,
   setStatusTone,
   setBusy
-} from "./workspace.js?v=20260910-readability";
-import { renderAssistantOutput } from "./rendering.js?v=20260910-readability";
-import { runWithWakeRetry, postJson } from "./api.js?v=20260910-readability";
+} from "./workspace.js?v=20260910-cleanup";
+import { renderAssistantOutput } from "./rendering.js?v=20260910-cleanup";
+import { runWithWakeRetry, postJson } from "./api.js?v=20260910-cleanup";
 
 if (elements.mentorResponseBackdrop && elements.mentorResponseBackdrop.parentElement !== document.body) {
   document.body.appendChild(elements.mentorResponseBackdrop);

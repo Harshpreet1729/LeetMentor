@@ -22,7 +22,13 @@ On macOS or Linux, use `source .venv/bin/activate`.
 python -m pip install -r requirements.txt
 ```
 
-Copy `.env.example` to `.env` and add your Groq API key. Keep `.env` private.
+Create a `.env` file in the project folder with these local settings. Keep it private:
+
+```dotenv
+DJANGO_DEBUG=true
+DJANGO_SECRET_KEY=replace-with-your-own-development-secret
+GROQ_API_KEY=your-groq-api-key
+```
 
 ```bash
 python manage.py migrate
@@ -57,6 +63,7 @@ This is a normal Django project with function-based views and plain browser Java
 | `mentor/leetcode.py` | Fetch and parse LeetCode problem data; cache fetched problems in memory |
 | `mentor/services.py` | Validate mentor inputs, call Groq, and check the response |
 | `mentor/prompts.py` | Teaching instructions for the AI |
+| `mentor/hints.py` | Local hint text grouped by topic and hint level |
 | `mentor/models.py` | Store study records and schedule their first review |
 | `mentor/migrations/` | Create the database schema; keep these for new installations |
 | `mentor/tests.py` | Regression tests for services, endpoints, and study records |
@@ -74,6 +81,26 @@ This is a normal Django project with function-based views and plain browser Java
 | `static/js/app.js`, `static/css/app.css` | Shared navigation and page styles |
 
 Read `mentor/urls.py`, then the matching function in `mentor/views.py`, then its service or model. This follows the same path as a user request.
+
+### Backend reading order
+
+1. **`mentor/urls.py` -> `mentor/views.py`**: start with `home`, `problem_lookup`,
+   and `assistant_chat`. `_json_payload` checks incoming JSON for both POST endpoints.
+2. **`mentor/leetcode.py`**: follow `get_problem` -> `_resolve_slug` ->
+   `_graphql_request` -> `_map_question`. `_slug_from_url` extracts a slug from a
+   link; `_title_to_slug` cleans a title when lookup cannot find an exact match.
+3. **`mentor/services.py`**: follow `generate_assistant_response`. It validates the
+   input, asks Groq, uses the existing local fallback when available, and checks the
+   answer format. `prompts.py` and `hints.py` contain text, not extra request flows.
+4. **`mentor/models.py`**: read the fields, then `review_interval_for_stage` and
+   `save`. An existing review date is preserved when you edit a reflection.
+5. **`study_records` in `mentor/views.py`**: GET loads progress; POST delegates to
+   `_save_study_record` or `_review_study_record`. Both use `_study_response` for
+   the same JSON shape. Database transactions, session filters, and stale-review
+   checks remain in place.
+
+The earlier PDF shows the original implementations. Use these function names to
+find the current code. Explanations now live here rather than in source comments.
 
 ### JavaScript reading order
 

@@ -1,5 +1,4 @@
-// Send JSON requests, attach CSRF to POSTs, and retry sleeping-server failures.
-import { state, updateServerChip } from "./workspace.js?v=20260910-readability";
+import { state, updateServerChip } from "./workspace.js?v=20260910-cleanup";
 
 const SERVER_WAKE_TIMEOUT_MS = 90000;
 const SERVER_WAKE_RETRY_DELAY_MS = 3000;
@@ -42,8 +41,6 @@ export function isLeetCodeReachabilityError(error) {
     message.includes("check your internet connection")
   );
 }
-
-// Shared JSON request helper with a timeout and readable errors.
 export async function fetchJson(url, options, timeoutMs = 25000) {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -172,8 +169,6 @@ export function warmServerInBackground() {
     updateServerChip("Wake check failed", "error");
   });
 }
-
-// Send an object as JSON; Django checks the CSRF token before running the view.
 export async function postJson(url, payload, timeoutMs = 25000) {
   return fetchJson(url, {
     method: "POST",

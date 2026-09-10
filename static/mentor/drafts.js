@@ -1,5 +1,4 @@
-// Keep code drafts per problem/language and workspace preferences in localStorage.
-import { state, elements, setText } from "./workspace.js?v=20260910-readability";
+import { state, elements, setText } from "./workspace.js?v=20260910-cleanup";
 
 const storageKeys = {
   legacyCode: "leetmentor.code",
@@ -9,8 +8,6 @@ const storageKeys = {
   problemIdentifier: "leetmentor.problemIdentifier",
   problemSnapshot: "leetmentor.problemSnapshot"
 };
-
-// Drafts belong to one problem and language, not to the whole workspace.
 function draftStorageKey(problem, language) {
   const slug = problem?.titleSlug || "scratchpad";
   return `leetmentor.draft.v2.${encodeURIComponent(slug)}.${encodeURIComponent(language || "C++")}`;
@@ -52,20 +49,16 @@ export function saveWorkspaceSnapshot() {
 
 export function queueAutosave(source) {
   window.clearTimeout(state.autosaveTimer);
-  if (source === "code" && elements.editorAutosave) {
+  if (source === "code") {
     setText(elements.editorAutosave, "Saving locally...");
   }
-  if (source === "note" && elements.noteAutosave) {
+  if (source === "note") {
     setText(elements.noteAutosave, "Saving note...");
   }
   state.autosaveTimer = window.setTimeout(() => {
     saveWorkspaceSnapshot();
-    if (elements.editorAutosave) {
-      setText(elements.editorAutosave, "Autosaved locally");
-    }
-    if (elements.noteAutosave) {
-      setText(elements.noteAutosave, "Notes are saved locally in this browser.");
-    }
+    setText(elements.editorAutosave, "Autosaved locally");
+    setText(elements.noteAutosave, "Notes are saved locally in this browser.");
   }, 180);
 }
 

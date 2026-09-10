@@ -1,7 +1,4 @@
-// Format problem details and AI text. Escape text before inserting HTML.
-import { state, elements } from "./workspace.js?v=20260910-readability";
-
-// Escape provider text before adding simple Markdown formatting.
+import { state, elements } from "./workspace.js?v=20260910-cleanup";
 function escapeHtml(text) {
   return text
     .replace(/&/g, "&amp;")
@@ -108,33 +105,26 @@ export function renderAssistantOutput(text) {
     return;
   }
 
-  const blocks = [];
+  const htmlParts = [];
   const codePattern = /```(\w+)?\n([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
 
   while ((match = codePattern.exec(source)) !== null) {
     if (match.index > lastIndex) {
-      blocks.push({ type: "text", content: source.slice(lastIndex, match.index) });
+      htmlParts.push(renderTextBlock(source.slice(lastIndex, match.index)));
     }
-    blocks.push({ type: "code", language: match[1] || "", content: match[2] });
+    const language = escapeHtml(match[1] || "");
+    const code = escapeHtml(match[2].trim());
+    htmlParts.push(`<pre><code class="language-${language}">${code}</code></pre>`);
     lastIndex = match.index + match[0].length;
   }
 
   if (lastIndex < source.length) {
-    blocks.push({ type: "text", content: source.slice(lastIndex) });
+    htmlParts.push(renderTextBlock(source.slice(lastIndex)));
   }
 
-  const html = blocks
-    .map((block) => {
-      if (block.type === "code") {
-        return `<pre><code class="language-${escapeHtml(block.language)}">${escapeHtml(block.content.trim())}</code></pre>`;
-      }
-      return renderTextBlock(block.content);
-    })
-    .join("");
-
-  elements.assistantOutput.innerHTML = html;
+  elements.assistantOutput.innerHTML = htmlParts.join("");
   elements.assistantOutput.scrollTop = 0;
 
   if (window.MathJax && window.MathJax.typesetPromise) {
@@ -161,20 +151,13 @@ export function renderProblemExamples(exampleCards, exampleStrings) {
         const parts = [];
         const title = escapeHtml(card.title || `Example ${index + 1}`);
 
-        if (card.input) {
-          parts.push(
-            `<div class="detail-item"><span class="detail-item__label">Input</span><p>${renderMultilineText(card.input)}</p></div>`
-          );
-        }
-        if (card.output) {
-          parts.push(
-            `<div class="detail-item"><span class="detail-item__label">Output</span><p>${renderMultilineText(card.output)}</p></div>`
-          );
-        }
-        if (card.explanation) {
-          parts.push(
-            `<div class="detail-item"><span class="detail-item__label">Explanation</span><p>${renderMultilineText(card.explanation)}</p></div>`
-          );
+        const labels = { input: "Input", output: "Output", explanation: "Explanation" };
+        for (const [field, label] of Object.entries(labels)) {
+          if (card[field]) {
+            parts.push(
+              `<div class="detail-item"><span class="detail-item__label">${label}</span><p>${renderMultilineText(card[field])}</p></div>`
+            );
+          }
         }
         if (Array.isArray(card.notes) && card.notes.length) {
           parts.push(

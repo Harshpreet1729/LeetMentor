@@ -1,4 +1,3 @@
-// Start here: connect dashboard controls, then restore the saved workspace.
 import {
   state,
   elements,
@@ -7,27 +6,25 @@ import {
   updateServerChip,
   setActiveMode,
   updateEditorFilename
-} from "./workspace.js?v=20260910-readability";
-import { renderAssistantOutput } from "./rendering.js?v=20260910-readability";
+} from "./workspace.js?v=20260910-cleanup";
+import { renderAssistantOutput } from "./rendering.js?v=20260910-cleanup";
 import {
   saveDraftFor,
   restoreDraftFor,
   saveWorkspaceSnapshot,
   queueAutosave,
   restoreWorkspaceSnapshot
-} from "./drafts.js?v=20260910-readability";
-import { SERVER_IDLE_THRESHOLD_MS, warmServerInBackground } from "./api.js?v=20260910-readability";
-import { loadStudyData, saveStudyRecord, markStudyReviewed } from "./study.js?v=20260910-readability";
-import { applyProblemState, loadDaily, loadProblem } from "./problems.js?v=20260910-readability";
+} from "./drafts.js?v=20260910-cleanup";
+import { SERVER_IDLE_THRESHOLD_MS, warmServerInBackground } from "./api.js?v=20260910-cleanup";
+import { loadStudyData, saveStudyRecord, markStudyReviewed } from "./study.js?v=20260910-cleanup";
+import { applyProblemState, loadDaily, loadProblem } from "./problems.js?v=20260910-cleanup";
 import {
   isResponsePopoverOpen,
   setResponsePopoverOpen,
   openChatGptWithProblem,
   openYouTubeWithProblem,
   runAssistant
-} from "./assistant.js?v=20260910-readability";
-
-// Connect the controls to the functions above.
+} from "./assistant.js?v=20260910-cleanup";
 elements.modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const mode = button.getAttribute("data-mode");

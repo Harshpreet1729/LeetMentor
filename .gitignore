@@ -12,6 +12,5 @@ staticfiles/
 django.out
 django.err
 .DS_Store
-# Local documents and scratch files are not application source.
 output/
 tmp/

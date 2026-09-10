@@ -11,8 +11,10 @@ REVIEW_INTERVAL_DAYS = (1, 3, 7, 21, 45)
 
 
 def review_interval_for_stage(stage: int) -> timedelta:
-    """Return the interval for the number of reviews already completed."""
-    index = min(max(stage, 0), len(REVIEW_INTERVAL_DAYS) - 1)
+    last_stage = len(REVIEW_INTERVAL_DAYS) - 1
+    if stage < 0:
+        stage = 0
+    index = min(stage, last_stage)
     return timedelta(days=REVIEW_INTERVAL_DAYS[index])
 
 
@@ -93,7 +95,9 @@ class StudyRecord(models.Model):
 
         update_fields = kwargs.get("update_fields")
         if update_fields is not None and self.next_review_at is not None:
-            kwargs["update_fields"] = set(update_fields) | {"next_review_at"}
+            update_fields = set(update_fields)
+            update_fields.add("next_review_at")
+            kwargs["update_fields"] = update_fields
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
