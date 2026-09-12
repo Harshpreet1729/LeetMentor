@@ -1,4 +1,4 @@
-import { state, elements, setText } from "./workspace.js?v=20260910-cleanup";
+import { state, elements, setText } from "./workspace.js?v=20260912-names";
 
 const storageKeys = {
   legacyCode: "leetmentor.code",
@@ -36,7 +36,7 @@ export function restoreDraftFor(problem, language, options = {}) {
   }
 }
 
-export function saveWorkspaceSnapshot() {
+export function saveWorkspace() {
   saveDraftFor(state.problem, state.activeLanguage, elements.codeInput.value);
   localStorage.setItem(storageKeys.note, elements.questionInput ? elements.questionInput.value : "");
   localStorage.setItem(storageKeys.language, elements.languageSelect.value);
@@ -56,13 +56,13 @@ export function queueAutosave(source) {
     setText(elements.noteAutosave, "Saving note...");
   }
   state.autosaveTimer = window.setTimeout(() => {
-    saveWorkspaceSnapshot();
+    saveWorkspace();
     setText(elements.editorAutosave, "Autosaved locally");
     setText(elements.noteAutosave, "Notes are saved locally in this browser.");
   }, 180);
 }
 
-export function restoreWorkspaceSnapshot() {
+export function restoreWorkspace() {
   const savedCode = localStorage.getItem(storageKeys.legacyCode);
   const savedNote = localStorage.getItem(storageKeys.note);
   const savedLanguage = localStorage.getItem(storageKeys.language);

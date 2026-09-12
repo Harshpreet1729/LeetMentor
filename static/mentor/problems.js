@@ -5,16 +5,16 @@ import {
   setHidden,
   setStatusTone,
   setBusy
-} from "./workspace.js?v=20260910-cleanup";
+} from "./workspace.js?v=20260912-names";
 import {
   renderProblemExamples,
   renderProblemConstraints,
   renderProblemPreview
-} from "./rendering.js?v=20260910-cleanup";
-import { saveDraftFor, restoreDraftFor, saveWorkspaceSnapshot } from "./drafts.js?v=20260910-cleanup";
-import { isLeetCodeReachabilityError, fetchJson, runWithWakeRetry } from "./api.js?v=20260910-cleanup";
-import { loadStudyData } from "./study.js?v=20260910-cleanup";
-export function applyProblemState(problem, options = {}) {
+} from "./rendering.js?v=20260912-names";
+import { saveDraftFor, restoreDraftFor, saveWorkspace } from "./drafts.js?v=20260912-names";
+import { isLeetCodeUnavailable, fetchJson, withServerRetry } from "./api.js?v=20260912-names";
+import { loadStudyData } from "./study.js?v=20260912-names";
+export function showProblem(problem, options = {}) {
   const previousProblem = state.problem;
   const isDifferentProblem = previousProblem?.titleSlug !== problem?.titleSlug;
   if (isDifferentProblem && (previousProblem || elements.codeInput.value)) {
@@ -79,7 +79,7 @@ export function applyProblemState(problem, options = {}) {
     chip.textContent = tag;
     elements.tagList.appendChild(chip);
   });
-  saveWorkspaceSnapshot();
+  saveWorkspace();
   void loadStudyData(problem.titleSlug);
 }
 export function loadDaily() {
@@ -110,7 +110,7 @@ async function loadProblemRequest(url, isDaily = false) {
   const action = isDaily ? "daily challenge" : "lookup";
 
   try {
-    const data = await runWithWakeRetry(() => fetchJson(url), {
+    const data = await withServerRetry(() => fetchJson(url), {
       onWakeStart: () => {
         setStatusTone(elements.problemStatus, "loading");
         setText(elements.problemStatus, `Server was asleep. Waking it up and retrying ${action}...`);
@@ -119,11 +119,11 @@ async function loadProblemRequest(url, isDaily = false) {
         setText(elements.problemStatus, `Server is awake. Retrying ${action}...`);
       }
     });
-    applyProblemState(data.problem);
+    showProblem(data.problem);
     setStatusTone(elements.problemStatus, "success");
     setText(elements.problemStatus, isDaily ? "Daily challenge loaded." : "Problem loaded.");
   } catch (error) {
-    if (isDaily && isLeetCodeReachabilityError(error)) {
+    if (isDaily && isLeetCodeUnavailable(error)) {
       setStatusTone(elements.problemStatus, "warning");
       setText(elements.problemStatus, "LeetCode daily is not reachable right now. Enter a problem number or slug above and load it manually.");
     } else {

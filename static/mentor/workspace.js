@@ -3,13 +3,13 @@ export const state = {
   activeMode: "hint",
   loading: false,
   autosaveTimer: null,
-  serverWakePromise: null,
+  serverWakeTask: null,
   lastHiddenAt: 0,
   lastWakeCheckAt: 0,
   activeLanguage: "C++",
   responseTrigger: null,
   lastAssistantText: "",
-  studyLoadVersion: 0,
+  studyVersion: 0,
   studySaving: false
 };
 const byId = (id) => document.getElementById(id);

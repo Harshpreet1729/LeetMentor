@@ -18,7 +18,7 @@ GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
 class AIService:
-    def generate_assistant_response(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def get_answer(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._validate_payload(payload)
         mode = payload["mode"]
         fallback = self._fallback_for_mode(payload)
@@ -37,9 +37,9 @@ class AIService:
             invalid_answer = len(answer) < 40 or "```" in answer
             if mode == "hint":
                 hint_level = payload.get("hintLevel", 1)
-                invalid_answer = invalid_answer or not self._hint_shape_is_valid(answer, hint_level)
+                invalid_answer = invalid_answer or not self._valid_hint(answer, hint_level)
             else:
-                invalid_answer = invalid_answer or not self._explanation_shape_is_valid(answer)
+                invalid_answer = invalid_answer or not self._valid_explanation(answer)
                 invalid_answer = invalid_answer or "### Code" in answer or "Algorithm hint" in answer
             if invalid_answer:
                 answer = fallback
@@ -81,7 +81,7 @@ class AIService:
                 if not isinstance(values, list) or len(values) > limit or any(not isinstance(item, str) for item in values):
                     raise ValueError(f"Problem {field} are invalid or too large.")
 
-    def _hint_shape_is_valid(self, answer: str, hint_level: int) -> bool:
+    def _valid_hint(self, answer: str, hint_level: int) -> bool:
         normalized = answer.lower()
         if hint_level == 1:
             return (
@@ -123,7 +123,7 @@ class AIService:
             )
         )
 
-    def _explanation_shape_is_valid(self, answer: str) -> bool:
+    def _valid_explanation(self, answer: str) -> bool:
         normalized = answer.lower()
         required_sections = (
             "### goal",
@@ -242,7 +242,7 @@ class AIService:
         pieces = [
             f"Mode: {mode}",
             f"Mode guidance: {MODE_GUIDANCE[mode]}",
-            f"Required response shape:\n{self._response_contract(mode, hint_level)}",
+            f"Required response shape:\n{self._answer_format(mode, hint_level)}",
             f"Hint level: {hint_level}" if mode == "hint" else "",
             f"Preferred language: {payload.get('language') or 'C++'}",
             f"Student question: {payload.get('userQuestion')}" if payload.get("userQuestion") else "",
@@ -284,7 +284,7 @@ class AIService:
 
         return "\n\n".join(piece for piece in pieces if piece)
 
-    def _response_contract(self, mode: str, hint_level: int = 1) -> str:
+    def _answer_format(self, mode: str, hint_level: int = 1) -> str:
         if mode == "hint":
             return HINT_RESPONSE_FORMATS.get(hint_level, HINT_RESPONSE_FORMATS[3])
         return RESPONSE_FORMATS.get(mode, RESPONSE_FORMATS["default"])
@@ -298,7 +298,7 @@ class AIService:
             return "Compare your code complexity with the target best complexity for this problem."
         return "Ask for a dry run, hint, or code review if you want to go deeper."
 
-    def _generate_progressive_hint(self, problem: dict[str, Any] | None, hint_level: int) -> str | None:
+    def _local_hint(self, problem: dict[str, Any] | None, hint_level: int) -> str | None:
         if not problem:
             return None
 
@@ -320,13 +320,13 @@ class AIService:
 
         title = problem.get("title", "this problem")
         starting_line = f"Start by restating what one step of progress looks like in {title}."
-        example = self._extract_example_text(problem)
+        example = self._example_text(problem)
         if example:
             starting_line += f" Use the first sample as your guide: {example}"
         level = hint_level if hint_level in (1, 2) else 3
         return HINT_TEXT[topic][level].format(title=title, starting_line=starting_line)
 
-    def _generate_concise_explanation(self, problem: dict[str, Any] | None) -> str | None:
+    def _local_explanation(self, problem: dict[str, Any] | None) -> str | None:
         if not problem:
             return None
 
@@ -396,14 +396,14 @@ class AIService:
 
         if mode == "hint":
             hint_level = int(payload.get("hintLevel") or 1)
-            return self._generate_progressive_hint(problem, hint_level)
+            return self._local_hint(problem, hint_level)
         if mode == "explain":
-            return self._generate_concise_explanation(problem)
+            return self._local_explanation(problem)
         if mode == "debug":
-            return self._generate_debug_fallback(problem, code)
+            return self._local_code_review(problem, code)
         return None
 
-    def _generate_debug_fallback(self, problem: dict[str, Any], code: str) -> str:
+    def _local_code_review(self, problem: dict[str, Any], code: str) -> str:
         if not code:
             return "### Missing code\nPlease paste your code so I can review it properly."
 
@@ -441,7 +441,7 @@ class AIService:
             "- Does every valid path return the expected answer?",
         ])
 
-    def _extract_example_text(self, problem: dict[str, Any]) -> str:
+    def _example_text(self, problem: dict[str, Any]) -> str:
         examples = problem.get("examples") or []
         if not examples:
             return ""

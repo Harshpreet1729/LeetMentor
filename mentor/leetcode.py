@@ -106,7 +106,7 @@ class ProblemContext:
 class LeetCodeService:
     def __init__(self) -> None:
         self.cache: dict[str, ProblemContext] = {}
-        self.problem_index_cache: list[dict[str, str]] | None = None
+        self.problem_list: list[dict[str, str]] | None = None
 
     def get_daily_challenge(self) -> ProblemContext:
         payload = self._graphql_request(DAILY_QUERY, {})
@@ -114,7 +114,7 @@ class LeetCodeService:
         if not daily or not daily.get("question"):
             raise ValueError("Daily problem not found from LeetCode.")
 
-        problem = self._map_question(daily["question"], daily["link"])
+        problem = self._build_problem(daily["question"], daily["link"])
         self._cache_problem(problem)
         return problem
 
@@ -126,7 +126,7 @@ class LeetCodeService:
         if normalized in self.cache:
             return self.cache[normalized]
 
-        slug = self._resolve_slug(normalized)
+        slug = self._find_slug(normalized)
         if slug in self.cache:
             return self.cache[slug]
 
@@ -135,12 +135,12 @@ class LeetCodeService:
         if not question:
             raise ValueError("Problem not found. Please check the problem number, slug, title, or URL.")
 
-        problem = self._map_question(question, f"/problems/{question['titleSlug']}/")
+        problem = self._build_problem(question, f"/problems/{question['titleSlug']}/")
 
         self._cache_problem(problem)
         return problem
 
-    def _resolve_slug(self, identifier: str) -> str:
+    def _find_slug(self, identifier: str) -> str:
         if identifier.startswith("http"):
             return self._slug_from_url(identifier)
 
@@ -148,7 +148,7 @@ class LeetCodeService:
         if is_slug and not identifier.isdigit():
             return identifier.lower()
 
-        slug = self._lookup_slug_from_problem_index(identifier)
+        slug = self._find_slug_in_list(identifier)
         if slug:
             return slug
         try:
@@ -179,20 +179,20 @@ class LeetCodeService:
         cleaned_title = re.sub(r"[^a-z0-9\s-]", "", title.lower())
         return "-".join(cleaned_title.split())
 
-    def _lookup_slug_from_problem_index(self, identifier: str) -> str | None:
+    def _find_slug_in_list(self, identifier: str) -> str | None:
         normalized = identifier.strip().lower()
-        for entry in self._get_problem_index():
+        for entry in self._get_problem_list():
             normalized_title = entry["title"].lower()
-            slug_like_title = self._title_to_slug(normalized_title)
+            title_slug = self._title_to_slug(normalized_title)
             if normalized in (
-                entry["frontendId"], entry["titleSlug"].lower(), normalized_title, slug_like_title
+                entry["frontendId"], entry["titleSlug"].lower(), normalized_title, title_slug
             ):
                 return entry["titleSlug"]
         return None
 
-    def _get_problem_index(self) -> list[dict[str, str]]:
-        if self.problem_index_cache is not None:
-            return self.problem_index_cache
+    def _get_problem_list(self) -> list[dict[str, str]]:
+        if self.problem_list is not None:
+            return self.problem_list
 
         try:
             response = requests.get(
@@ -203,11 +203,11 @@ class LeetCodeService:
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError):
-            self.problem_index_cache = []
-            return self.problem_index_cache
+            self.problem_list = []
+            return self.problem_list
 
         pairs = data.get("stat_status_pairs", [])
-        self.problem_index_cache = [
+        self.problem_list = [
             {
                 "frontendId": str(item["stat"]["frontend_question_id"]),
                 "title": item["stat"]["question__title"],
@@ -215,7 +215,7 @@ class LeetCodeService:
             }
             for item in pairs
         ]
-        return self.problem_index_cache
+        return self.problem_list
 
     def _search_slug(self, identifier: str) -> str | None:
         payload = self._graphql_request(SEARCH_QUERY, {"search": identifier})
@@ -230,7 +230,7 @@ class LeetCodeService:
                 return question["titleSlug"]
         return questions[0]["titleSlug"] if questions else None
 
-    def _map_question(self, question: dict[str, Any], link: str) -> ProblemContext:
+    def _build_problem(self, question: dict[str, Any], link: str) -> ProblemContext:
         stats = json.loads(question["stats"]) if question.get("stats") else {}
         statement, examples, constraints, example_cards = self._extract_sections(question.get("content") or "")
         return ProblemContext(
@@ -248,10 +248,10 @@ class LeetCodeService:
         )
 
     def _extract_sections(self, content: str) -> tuple[str, list[str], list[str], list[dict[str, Any]]]:
-        plain_text = self._normalize_problem_text(self._html_to_text(content))
+        plain_text = self._clean_text(self._html_to_text(content))
 
         statement_match = re.split(r"\bExample\s+\d+\s*:", plain_text, maxsplit=1, flags=re.IGNORECASE)
-        statement = self._normalize_problem_text(statement_match[0])
+        statement = self._clean_text(statement_match[0])
         statement = re.sub(r"\bConstraints\s*:\s*$", "", statement, flags=re.IGNORECASE).strip()
 
         example_cards: list[dict[str, Any]] = []
@@ -270,7 +270,7 @@ class LeetCodeService:
         constraints: list[str] = []
         constraint_match = re.search(r"Constraints\s*:\s*([\s\S]*)$", plain_text, flags=re.IGNORECASE)
         if constraint_match:
-            constraints = self._extract_constraint_lines(constraint_match.group(1))
+            constraints = self._read_constraints(constraint_match.group(1))
 
         return statement, examples, constraints, example_cards
 
@@ -292,7 +292,7 @@ class LeetCodeService:
         text = re.sub(r"[ \t]{2,}", " ", text)
         return text
 
-    def _normalize_problem_text(self, text: str) -> str:
+    def _clean_text(self, text: str) -> str:
         text = text.replace("\r\n", "\n").replace("\r", "\n")
         text = re.sub(r"[ \t]+\n", "\n", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
@@ -302,7 +302,7 @@ class LeetCodeService:
         return text.strip()
 
     def _parse_example_block(self, block: str, number: str) -> dict[str, Any] | None:
-        cleaned = self._normalize_problem_text(block)
+        cleaned = self._clean_text(block)
         if not cleaned:
             return None
 
@@ -315,14 +315,14 @@ class LeetCodeService:
             )
             match = pattern.search(cleaned)
             if match:
-                sections[label.lower()] = self._normalize_problem_text(match.group(1))
+                sections[label.lower()] = self._clean_text(match.group(1))
             remaining_text = pattern.sub("", remaining_text)
 
         if not sections:
             lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
             return {"title": f"Example {number}", "body": "\n".join(lines)}
 
-        note_lines = self._normalize_problem_text(remaining_text).splitlines()
+        note_lines = self._clean_text(remaining_text).splitlines()
         notes = [line.strip(" -") for line in note_lines if line.strip(" -")]
         return {
             "title": f"Example {number}",
@@ -342,8 +342,8 @@ class LeetCodeService:
             pieces.append(card["body"])
         return "\n".join(piece for piece in pieces if piece)
 
-    def _extract_constraint_lines(self, raw_text: str) -> list[str]:
-        cleaned = self._normalize_problem_text(raw_text)
+    def _read_constraints(self, raw_text: str) -> list[str]:
+        cleaned = self._clean_text(raw_text)
         if not cleaned:
             return []
 

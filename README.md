@@ -85,11 +85,11 @@ Read `mentor/urls.py`, then the matching function in `mentor/views.py`, then its
 ### Backend reading order
 
 1. **`mentor/urls.py` -> `mentor/views.py`**: start with `home`, `problem_lookup`,
-   and `assistant_chat`. `_json_payload` checks incoming JSON for both POST endpoints.
-2. **`mentor/leetcode.py`**: follow `get_problem` -> `_resolve_slug` ->
-   `_graphql_request` -> `_map_question`. `_slug_from_url` extracts a slug from a
+   and `assistant_chat`. `_read_json` checks incoming JSON for both POST endpoints.
+2. **`mentor/leetcode.py`**: follow `get_problem` -> `_find_slug` ->
+   `_graphql_request` -> `_build_problem`. `_slug_from_url` extracts a slug from a
    link; `_title_to_slug` cleans a title when lookup cannot find an exact match.
-3. **`mentor/services.py`**: follow `generate_assistant_response`. It validates the
+3. **`mentor/services.py`**: follow `get_answer`. It validates the
    input, asks Groq, uses the existing local fallback when available, and checks the
    answer format. `prompts.py` and `hints.py` contain text, not extra request flows.
 4. **`mentor/models.py`**: read the fields, then `review_interval_for_stage` and
@@ -116,14 +116,14 @@ Read one user action at a time, rather than memorizing every helper:
 2. **`app.js`**: find the Load button's `addEventListener`. It calls `loadProblem`.
    The final section restores the last workspace when the page opens.
 3. **`problems.js`**: follow `loadProblem` -> `loadProblemRequest` ->
-   `applyProblemState`. The last function displays the problem, restores its draft,
+   `showProblem`. The last function displays the problem, restores its draft,
    and asks `study.js` to load its learning record.
 4. **`api.js`**: read `fetchJson` and `postJson`. GET receives data; POST sends an
    object encoded as JSON with a CSRF header. Read wake/retry helpers afterward.
 5. **`assistant.js`**: follow `runAssistant`: validate the inputs, build the payload,
    call Django, and display the response. Dialog and external-link helpers are separate.
 6. **`drafts.js`**: follow `saveDraftFor` and `restoreDraftFor`. The storage key
-   includes the problem slug and language. `restoreWorkspaceSnapshot` returns saved
+   includes the problem slug and language. `restoreWorkspace` returns saved
    problem data to `app.js`; storage code does not load problems itself.
 7. **`study.js`**: follow `loadStudyData`, `saveStudyRecord`, and `markStudyReviewed`.
    The version checks ignore old responses after you change the selected problem.

@@ -1,5 +1,5 @@
-import { state, elements, setText, setStatusTone } from "./workspace.js?v=20260910-cleanup";
-import { fetchJson, postJson } from "./api.js?v=20260910-cleanup";
+import { state, elements, setText, setStatusTone } from "./workspace.js?v=20260912-names";
+import { fetchJson, postJson } from "./api.js?v=20260912-names";
 const studyStatusLabels = {
   started: "Started",
   understood: "Problem understood",
@@ -41,7 +41,7 @@ function formatReviewDate(value, due) {
   return `Next review ${new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date)}`;
 }
 
-function applyStudyRecord(record) {
+function showStudyRecord(record) {
   if (!elements.studyStatus) {
     return;
   }
@@ -133,7 +133,7 @@ export async function loadStudyData(problemSlug) {
     return;
   }
 
-  const loadVersion = ++state.studyLoadVersion;
+  const loadVersion = ++state.studyVersion;
   if (problemSlug) {
     elements.studyStatus.value = "started";
     elements.studyConfidence.value = "3";
@@ -149,16 +149,16 @@ export async function loadStudyData(problemSlug) {
   const query = problemSlug ? `?problem_slug=${encodeURIComponent(problemSlug)}` : "";
   try {
     const data = await fetchJson(`/api/study/${query}`);
-    if (loadVersion !== state.studyLoadVersion) {
+    if (loadVersion !== state.studyVersion) {
       return;
     }
-    applyStudyRecord(data.record);
+    showStudyRecord(data.record);
     renderReviewQueue(data.queue);
   } catch (error) {
-    if (loadVersion !== state.studyLoadVersion) {
+    if (loadVersion !== state.studyVersion) {
       return;
     }
-    applyStudyRecord(null);
+    showStudyRecord(null);
     renderReviewQueue([]);
     setStatusTone(elements.studySaveStatus, "error");
     setText(elements.studySaveStatus, error.name === "AbortError" ? "Learning record request timed out." : error.message);
@@ -173,7 +173,7 @@ export async function saveStudyRecord() {
   }
 
   const problemSlug = state.problem.titleSlug;
-  const requestVersion = state.studyLoadVersion;
+  const requestVersion = state.studyVersion;
   setStudyBusy(true);
   setStatusTone(elements.studySaveStatus, "loading");
   setText(elements.studySaveStatus, "Saving your checkpoint...");
@@ -192,21 +192,21 @@ export async function saveStudyRecord() {
 
   try {
     const data = await postJson("/api/study/", payload);
-    if (requestVersion !== state.studyLoadVersion || state.problem?.titleSlug !== problemSlug) {
+    if (requestVersion !== state.studyVersion || state.problem?.titleSlug !== problemSlug) {
       return;
     }
-    applyStudyRecord(data.record);
+    showStudyRecord(data.record);
     renderReviewQueue(data.queue);
     setStatusTone(elements.studySaveStatus, "success");
     setText(elements.studySaveStatus, "Learning checkpoint saved.");
   } catch (error) {
-    if (requestVersion !== state.studyLoadVersion || state.problem?.titleSlug !== problemSlug) {
+    if (requestVersion !== state.studyVersion || state.problem?.titleSlug !== problemSlug) {
       return;
     }
     setStatusTone(elements.studySaveStatus, "error");
     setText(elements.studySaveStatus, error.name === "AbortError" ? "Saving timed out. Try again." : error.message);
   } finally {
-    if (requestVersion === state.studyLoadVersion && state.problem?.titleSlug === problemSlug) {
+    if (requestVersion === state.studyVersion && state.problem?.titleSlug === problemSlug) {
       setStudyBusy(false);
     }
   }
@@ -217,29 +217,29 @@ export async function markStudyReviewed(problemSlug, expectedReviewStage) {
     return;
   }
 
-  const requestVersion = state.studyLoadVersion;
+  const requestVersion = state.studyVersion;
   setStudyBusy(true);
   setStatusTone(elements.studySaveStatus, "loading");
   setText(elements.studySaveStatus, "Updating revision schedule...");
   try {
     const data = await postJson("/api/study/", { action: "reviewed", problemSlug, expectedReviewStage });
-    if (requestVersion !== state.studyLoadVersion) {
+    if (requestVersion !== state.studyVersion) {
       return;
     }
     if (state.problem?.titleSlug === problemSlug) {
-      applyStudyRecord(data.record);
+      showStudyRecord(data.record);
     }
     renderReviewQueue(data.queue);
     setStatusTone(elements.studySaveStatus, "success");
     setText(elements.studySaveStatus, "Review logged. The next revision is scheduled.");
   } catch (error) {
-    if (requestVersion !== state.studyLoadVersion) {
+    if (requestVersion !== state.studyVersion) {
       return;
     }
     setStatusTone(elements.studySaveStatus, "error");
     setText(elements.studySaveStatus, error.name === "AbortError" ? "Update timed out. Try again." : error.message);
   } finally {
-    if (requestVersion === state.studyLoadVersion) {
+    if (requestVersion === state.studyVersion) {
       setStudyBusy(false);
     }
   }

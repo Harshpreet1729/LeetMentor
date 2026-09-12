@@ -5,9 +5,9 @@ import {
   setHidden,
   setStatusTone,
   setBusy
-} from "./workspace.js?v=20260910-cleanup";
-import { renderAssistantOutput } from "./rendering.js?v=20260910-cleanup";
-import { runWithWakeRetry, postJson } from "./api.js?v=20260910-cleanup";
+} from "./workspace.js?v=20260912-names";
+import { renderAssistantOutput } from "./rendering.js?v=20260912-names";
+import { withServerRetry, postJson } from "./api.js?v=20260912-names";
 
 if (elements.mentorResponseBackdrop && elements.mentorResponseBackdrop.parentElement !== document.body) {
   document.body.appendChild(elements.mentorResponseBackdrop);
@@ -16,16 +16,16 @@ if (elements.mentorResponsePanel && elements.mentorResponsePanel.parentElement !
   document.body.appendChild(elements.mentorResponsePanel);
 }
 
-export function isResponsePopoverOpen() {
+export function isAnswerOpen() {
   return document.body.classList.contains("mentor-response-is-open");
 }
 
-export function setResponsePopoverOpen(isOpen, options = {}) {
+export function setAnswerOpen(isOpen, options = {}) {
   if (!elements.mentorResponsePanel) {
     return;
   }
 
-  const wasOpen = isResponsePopoverOpen();
+  const wasOpen = isAnswerOpen();
   if (isOpen && !wasOpen) {
     state.responseTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   }
@@ -89,7 +89,7 @@ function buildChatGptPrompt() {
   return pieces.join("\n");
 }
 
-export async function openChatGptWithProblem() {
+export async function openChatGpt() {
   if (!state.problem) {
     setStatusTone(elements.assistantStatus, "error");
     setText(elements.assistantStatus, "Load a problem first so there is something to send.");
@@ -116,7 +116,7 @@ export async function openChatGptWithProblem() {
   window.open(chatGptUrl, "_blank", "noopener,noreferrer");
 }
 
-export function openYouTubeWithProblem() {
+export function openYouTube() {
   if (!state.problem) {
     setStatusTone(elements.assistantStatus, "error");
     setText(elements.assistantStatus, "Load a problem first so the YouTube search knows what to look for.");
@@ -155,7 +155,7 @@ export async function runAssistant(mode) {
   };
 
   if (mode === "debug" && !payload.userCode) {
-    setResponsePopoverOpen(true, { focusPanel: true });
+    setAnswerOpen(true, { focusPanel: true });
     setStatusTone(elements.assistantStatus, "error");
     setText(elements.assistantStatus, "Add your code first so the mentor can review the actual solution.");
     renderAssistantOutput([
@@ -170,7 +170,7 @@ export async function runAssistant(mode) {
     return;
   }
 
-  setResponsePopoverOpen(true, { focusPanel: true });
+  setAnswerOpen(true, { focusPanel: true });
   setBusy(true);
   setStatusTone(elements.assistantStatus, "loading");
   setText(elements.assistantStatus, "Thinking...");
@@ -178,7 +178,7 @@ export async function runAssistant(mode) {
   elements.nextStep.classList.add("hidden");
 
   try {
-    const data = await runWithWakeRetry(
+    const data = await withServerRetry(
       () => postJson("/api/assistant/", payload, 75000),
       {
         onWakeStart: () => {

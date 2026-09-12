@@ -1,4 +1,4 @@
-import { state, elements } from "./workspace.js?v=20260910-cleanup";
+import { state, elements } from "./workspace.js?v=20260912-names";
 function escapeHtml(text) {
   return text
     .replace(/&/g, "&amp;")

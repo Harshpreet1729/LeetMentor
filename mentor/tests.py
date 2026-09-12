@@ -32,18 +32,18 @@ class AssistantServiceTests(SimpleTestCase):
 
     def test_rejects_unknown_mode_before_provider_use(self) -> None:
         with self.assertRaisesMessage(ValueError, "Unsupported mentor mode"):
-            self.service.generate_assistant_response({"mode": "invented"})
+            self.service.get_answer({"mode": "invented"})
 
     def test_rejects_non_numeric_hint_level(self) -> None:
         with self.assertRaisesMessage(ValueError, "Hint level"):
-            self.service.generate_assistant_response({"mode": "hint", "hintLevel": "three"})
+            self.service.get_answer({"mode": "hint", "hintLevel": "three"})
 
     def test_rejects_oversized_question(self) -> None:
         with self.assertRaisesMessage(ValueError, "userQuestion is too long"):
-            self.service.generate_assistant_response({"mode": "hint", "userQuestion": "x" * 4_001})
+            self.service.get_answer({"mode": "hint", "userQuestion": "x" * 4_001})
 
     def test_hash_table_fallback_does_not_assume_two_sum(self) -> None:
-        answer = self.service._generate_progressive_hint(self.problem, 1)
+        answer = self.service._local_hint(self.problem, 1)
         self.assertIsNotNone(answer)
         self.assertNotIn("target - nums", answer or "")
         self.assertNotIn("partner", (answer or "").lower())
@@ -52,7 +52,7 @@ class AssistantServiceTests(SimpleTestCase):
     @patch.dict("os.environ", {"GROQ_API_KEY": ""})
     def test_full_solution_is_not_faked_without_provider(self) -> None:
         with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
-            self.service.generate_assistant_response(
+            self.service.get_answer(
                 {"mode": "full_solution", "problem": self.problem, "language": "Python"}
             )
 
@@ -63,13 +63,13 @@ class LeetCodeServiceTests(SimpleTestCase):
 
     def test_resolves_standard_leetcode_url(self) -> None:
         self.assertEqual(
-            self.service._resolve_slug("https://leetcode.com/problems/two-sum/description/"),
+            self.service._find_slug("https://leetcode.com/problems/two-sum/description/"),
             "two-sum",
         )
 
     def test_rejects_non_leetcode_url(self) -> None:
         with self.assertRaisesMessage(ValueError, "Only LeetCode"):
-            self.service._resolve_slug("https://example.com/problems/two-sum/")
+            self.service._find_slug("https://example.com/problems/two-sum/")
 
     def test_extracts_statement_examples_and_constraints(self) -> None:
         content = """
@@ -119,7 +119,7 @@ class MentorEndpointTests(TestCase):
         )
         self.assertEqual(response.status_code, 413)
 
-    @patch("mentor.views.ai_service.generate_assistant_response")
+    @patch("mentor.views.ai_service.get_answer")
     def test_assistant_returns_service_response(self, generate) -> None:
         generate.return_value = {"answer": "A grounded hint.", "suggestedNextStep": "Try it."}
         response = self.client.post(
@@ -130,7 +130,7 @@ class MentorEndpointTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], "A grounded hint.")
 
-    @patch("mentor.views.ai_service.generate_assistant_response")
+    @patch("mentor.views.ai_service.get_answer")
     def test_assistant_without_session_does_not_create_database_session(self, generate) -> None:
         generate.return_value = {"answer": "A grounded hint.", "suggestedNextStep": "Try it."}
         request = self.client.post(
@@ -144,7 +144,7 @@ class MentorEndpointTests(TestCase):
         self.assertNotIn("sessionid", self.client.cookies)
 
     @patch("mentor.views.ASSISTANT_RATE_LIMIT", 1)
-    @patch("mentor.views.ai_service.generate_assistant_response")
+    @patch("mentor.views.ai_service.get_answer")
     def test_assistant_rate_limit_returns_retry_after(self, generate) -> None:
         generate.return_value = {"answer": "Hint"}
         payload = json.dumps({"mode": "hint", "hintLevel": 1})
@@ -447,7 +447,7 @@ class ProviderFlowTests(SimpleTestCase):
                 post.return_value.json.return_value = {
                     "choices": [{"message": {"content": "A provider response."}}]
                 }
-                response = service.generate_assistant_response({
+                response = service.get_answer({
                     "mode": mode, "problem": self.problem,
                     "language": "Python", "userCode": "return []",
                 })
@@ -464,7 +464,7 @@ class ProviderFlowTests(SimpleTestCase):
         service = AIService()
         for mode in ("hint", "explain", "debug"):
             with self.subTest(mode=mode):
-                response = service.generate_assistant_response({
+                response = service.get_answer({
                     "mode": mode, "problem": self.problem,
                     "language": "Python", "userCode": "return []",
                 })
@@ -472,13 +472,13 @@ class ProviderFlowTests(SimpleTestCase):
         for mode in ("complexity", "dry_run", "optimize", "full_solution"):
             with self.subTest(mode=mode):
                 with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
-                    service.generate_assistant_response({"mode": mode, "problem": self.problem})
+                    service.get_answer({"mode": mode, "problem": self.problem})
         post.assert_not_called()
 
     @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
     @patch("mentor.services.AIService._request_groq", side_effect=ValueError("Provider unavailable"))
     def test_hint_fallback_keeps_working_after_provider_failure(self, request_groq):
-        response = AIService().generate_assistant_response({
+        response = AIService().get_answer({
             "mode": "hint", "problem": self.problem, "hintLevel": 1,
         })
         self.assertIn("### Starting hint", response["answer"])
@@ -491,7 +491,7 @@ class ProviderFlowTests(SimpleTestCase):
         accepted = Mock(status_code=200)
         accepted.json.return_value = {"choices": [{"message": {"content": "Provider solution"}}]}
         post.side_effect = [rejected, accepted]
-        response = AIService().generate_assistant_response({"mode": "full_solution", "problem": self.problem})
+        response = AIService().get_answer({"mode": "full_solution", "problem": self.problem})
         self.assertEqual(response["answer"], "Provider solution")
         self.assertEqual(post.call_count, 2)
 
@@ -514,28 +514,28 @@ class ReadabilityRegressionTests(SimpleTestCase):
 
     def test_problem_number_and_title_use_index_before_search(self):
         service = LeetCodeService()
-        service.problem_index_cache = [
+        service.problem_list = [
             {"frontendId": "1", "title": "Two Sum", "titleSlug": "two-sum"}
         ]
         with patch.object(service, "_search_slug") as search:
-            self.assertEqual(service._resolve_slug("1"), "two-sum")
-            self.assertEqual(service._resolve_slug("Two Sum"), "two-sum")
+            self.assertEqual(service._find_slug("1"), "two-sum")
+            self.assertEqual(service._find_slug("Two Sum"), "two-sum")
         search.assert_not_called()
 
     def test_failed_search_can_normalize_a_title_but_not_guess_a_number(self):
         service = LeetCodeService()
-        service.problem_index_cache = []
+        service.problem_list = []
         with patch.object(service, "_search_slug", side_effect=ValueError("Unavailable")):
-            self.assertEqual(service._resolve_slug("  Two   Sum?!  "), "two-sum")
+            self.assertEqual(service._find_slug("  Two   Sum?!  "), "two-sum")
             with self.assertRaisesMessage(ValueError, "Problem number lookup failed"):
-                service._resolve_slug("12345")
+                service._find_slug("12345")
 
     def test_hint_templates_preserve_title_and_sample_text(self):
         problem = {
             "title": "Problem {title}", "statement": "Do the task.",
             "tags": [], "examples": ["Input: {sample} -> Output: 1"],
         }
-        answer = AIService()._generate_progressive_hint(problem, 1)
+        answer = AIService()._local_hint(problem, 1)
         self.assertIn("Problem {title}", answer)
         self.assertIn("Input: {sample} -> Output: 1", answer)
         self.assertIn("### Starter cue", answer)
@@ -545,9 +545,9 @@ class ReadabilityRegressionTests(SimpleTestCase):
         service = AIService()
         payload = {"mode": "hint", "hintLevel": 2, "problem": {"title": "Example", "tags": ["binary search"]}}
         with patch.object(service, "_request_groq", return_value="```python\nprint(1)\n```"):
-            invalid_answer = service.generate_assistant_response(payload)
+            invalid_answer = service.get_answer(payload)
         with patch.object(service, "_request_groq", side_effect=ValueError("Unavailable")):
-            failed_answer = service.generate_assistant_response(payload)
+            failed_answer = service.get_answer(payload)
         self.assertEqual(invalid_answer, failed_answer)
         self.assertIn("### Directional hint", failed_answer["answer"])
 
@@ -568,7 +568,7 @@ class StudySaveRegressionTests(TestCase):
         self.assertFalse(StudyRecord.objects.exists())
 
     def test_both_post_endpoints_reject_malformed_json_without_calling_ai(self):
-        with patch("mentor.views.ai_service.generate_assistant_response") as generate:
+        with patch("mentor.views.ai_service.get_answer") as generate:
             for url in ("/api/study/", "/api/assistant/"):
                 with self.subTest(url=url):
                     response = self.client.post(url, '{"broken":}', content_type="application/json")

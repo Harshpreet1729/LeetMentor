@@ -6,25 +6,25 @@ import {
   updateServerChip,
   setActiveMode,
   updateEditorFilename
-} from "./workspace.js?v=20260910-cleanup";
-import { renderAssistantOutput } from "./rendering.js?v=20260910-cleanup";
+} from "./workspace.js?v=20260912-names";
+import { renderAssistantOutput } from "./rendering.js?v=20260912-names";
 import {
   saveDraftFor,
   restoreDraftFor,
-  saveWorkspaceSnapshot,
+  saveWorkspace,
   queueAutosave,
-  restoreWorkspaceSnapshot
-} from "./drafts.js?v=20260910-cleanup";
-import { SERVER_IDLE_THRESHOLD_MS, warmServerInBackground } from "./api.js?v=20260910-cleanup";
-import { loadStudyData, saveStudyRecord, markStudyReviewed } from "./study.js?v=20260910-cleanup";
-import { applyProblemState, loadDaily, loadProblem } from "./problems.js?v=20260910-cleanup";
+  restoreWorkspace
+} from "./drafts.js?v=20260912-names";
+import { SERVER_IDLE_THRESHOLD_MS, wakeServer } from "./api.js?v=20260912-names";
+import { loadStudyData, saveStudyRecord, markStudyReviewed } from "./study.js?v=20260912-names";
+import { showProblem, loadDaily, loadProblem } from "./problems.js?v=20260912-names";
 import {
-  isResponsePopoverOpen,
-  setResponsePopoverOpen,
-  openChatGptWithProblem,
-  openYouTubeWithProblem,
+  isAnswerOpen,
+  setAnswerOpen,
+  openChatGpt,
+  openYouTube,
   runAssistant
-} from "./assistant.js?v=20260910-cleanup";
+} from "./assistant.js?v=20260912-names";
 elements.modeButtons.forEach((button) => {
   button.addEventListener("click", () => {
     const mode = button.getAttribute("data-mode");
@@ -48,7 +48,7 @@ if (elements.reviewQueue) {
     const loadSlug = target.getAttribute("data-study-load-slug");
     if (loadSlug) {
       elements.problemIdentifier.value = loadSlug;
-      saveWorkspaceSnapshot();
+      saveWorkspace();
       void loadProblem();
       return;
     }
@@ -61,19 +61,19 @@ if (elements.reviewQueue) {
   });
 }
 if (elements.askChatgptBtn) {
-  elements.askChatgptBtn.addEventListener("click", openChatGptWithProblem);
+  elements.askChatgptBtn.addEventListener("click", openChatGpt);
 }
 if (elements.youtubeSearchBtn) {
-  elements.youtubeSearchBtn.addEventListener("click", openYouTubeWithProblem);
+  elements.youtubeSearchBtn.addEventListener("click", openYouTube);
 }
 if (elements.mentorResponseBackdrop) {
   elements.mentorResponseBackdrop.addEventListener("click", () => {
-    setResponsePopoverOpen(false);
+    setAnswerOpen(false);
   });
 }
 if (elements.closeOutputBtn) {
   elements.closeOutputBtn.addEventListener("click", () => {
-    setResponsePopoverOpen(false);
+    setAnswerOpen(false);
   });
 }
 if (elements.copyOutputBtn) {
@@ -100,7 +100,7 @@ elements.clearOutputBtn.addEventListener("click", () => {
   renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
   setText(elements.nextStep, "");
   elements.nextStep.classList.add("hidden");
-  setResponsePopoverOpen(false);
+  setAnswerOpen(false);
 });
 
 elements.problemIdentifier.addEventListener("keydown", (event) => {
@@ -117,10 +117,10 @@ elements.languageSelect.addEventListener("change", () => {
     restoreDraftFor(state.problem, state.activeLanguage);
   }
   updateEditorFilename();
-  saveWorkspaceSnapshot();
+  saveWorkspace();
 });
-elements.hintLevelSelect.addEventListener("change", saveWorkspaceSnapshot);
-elements.problemIdentifier.addEventListener("input", saveWorkspaceSnapshot);
+elements.hintLevelSelect.addEventListener("change", saveWorkspace);
+elements.problemIdentifier.addEventListener("input", saveWorkspace);
 elements.codeInput.addEventListener("input", () => queueAutosave("code"));
 if (elements.questionInput) {
   elements.questionInput.addEventListener("input", () => queueAutosave("note"));
@@ -131,24 +131,24 @@ document.addEventListener("visibilitychange", () => {
     return;
   }
 
-  const wasHiddenLongEnough = state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS;
+  const wasAway = state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS;
   state.lastHiddenAt = 0;
-  if (wasHiddenLongEnough) {
-    warmServerInBackground();
+  if (wasAway) {
+    wakeServer();
   }
 });
 window.addEventListener("focus", () => {
   if (state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS) {
-    warmServerInBackground();
+    wakeServer();
   }
 });
 window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && isResponsePopoverOpen()) {
-    setResponsePopoverOpen(false);
+  if (event.key === "Escape" && isAnswerOpen()) {
+    setAnswerOpen(false);
     return;
   }
 
-  if (event.key === "Tab" && isResponsePopoverOpen()) {
+  if (event.key === "Tab" && isAnswerOpen()) {
     const focusable = Array.from(
       elements.mentorResponsePanel.querySelectorAll("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])")
     ).filter((element) => !element.hasAttribute("hidden"));
@@ -176,9 +176,9 @@ window.addEventListener("keydown", (event) => {
 });
 
 setActiveMode("hint");
-const savedWorkspace = restoreWorkspaceSnapshot();
+const savedWorkspace = restoreWorkspace();
 if (savedWorkspace.problem) {
-  applyProblemState(savedWorkspace.problem, {
+  showProblem(savedWorkspace.problem, {
     legacyDraft: savedWorkspace.legacyDraft,
     restoreDraft: true
   });
@@ -192,5 +192,5 @@ updateEditorFilename();
 updateServerChip("Server ready", "success");
 setStatusTone(elements.problemStatus, "neutral");
 setStatusTone(elements.assistantStatus, "neutral");
-setResponsePopoverOpen(false);
+setAnswerOpen(false);
 renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");

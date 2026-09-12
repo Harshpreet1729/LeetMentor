@@ -37,7 +37,7 @@ class RequestValidationError(ValueError):
         self.status = status
 
 
-def _session_key(request: HttpRequest) -> str:
+def _get_session_key(request: HttpRequest) -> str:
     if not request.session.session_key:
         request.session.create()
     session_key = request.session.session_key
@@ -105,7 +105,7 @@ def _study_queue(session_key: str, now=None) -> list[dict[str, object]]:
     return [_study_record_json(record, now) for record in records]
 
 
-def _json_payload(request: HttpRequest, max_bytes: int) -> dict[str, object]:
+def _read_json(request: HttpRequest, max_bytes: int) -> dict[str, object]:
     if len(request.body) > max_bytes:
         raise RequestValidationError("Request is too large.", status=413)
     try:
@@ -117,7 +117,7 @@ def _json_payload(request: HttpRequest, max_bytes: int) -> dict[str, object]:
     return payload
 
 
-def _validated_study_updates(payload: dict[str, object]) -> dict[str, object]:
+def _check_study_fields(payload: dict[str, object]) -> dict[str, object]:
     updates: dict[str, object] = {}
     title = _optional_string(payload, "problemTitle", 300, allow_blank=False)
     if title is not None:
@@ -168,7 +168,7 @@ def _study_response(session_key: str, record: StudyRecord | None) -> JsonRespons
 
 
 def _save_study_record(session_key: str, slug: str, payload: dict) -> JsonResponse:
-    updates = _validated_study_updates(payload)
+    updates = _check_study_fields(payload)
     with transaction.atomic():
         record, created = StudyRecord.objects.select_for_update().get_or_create(
             session_key=session_key,
@@ -234,7 +234,7 @@ def _review_study_record(session_key: str, slug: str, payload: dict) -> JsonResp
 @require_http_methods(["GET", "POST"])
 def study_records(request: HttpRequest) -> JsonResponse:
     try:
-        session_key = _session_key(request)
+        session_key = _get_session_key(request)
         if request.method == "GET":
             slug = _problem_slug(request.GET.get("problem_slug"), required=False)
             record = None
@@ -244,7 +244,7 @@ def study_records(request: HttpRequest) -> JsonResponse:
                 ).first()
             return _study_response(session_key, record)
 
-        payload = _json_payload(request, MAX_STUDY_BODY_BYTES)
+        payload = _read_json(request, MAX_STUDY_BODY_BYTES)
         action = payload.get("action", "save")
         if not isinstance(action, str) or action not in {"save", "reviewed"}:
             raise RequestValidationError("action must be save or reviewed.")
@@ -339,7 +339,7 @@ def problem_lookup(request: HttpRequest) -> JsonResponse:
 @require_POST
 def assistant_chat(request: HttpRequest) -> JsonResponse:
     try:
-        payload = _json_payload(request, MAX_ASSISTANT_BODY_BYTES)
+        payload = _read_json(request, MAX_ASSISTANT_BODY_BYTES)
     except RequestValidationError as error:
         return JsonResponse({"ok": False, "message": str(error)}, status=error.status)
 
@@ -353,7 +353,7 @@ def assistant_chat(request: HttpRequest) -> JsonResponse:
         return response
 
     try:
-        response = ai_service.generate_assistant_response(payload)
+        response = ai_service.get_answer(payload)
         return JsonResponse({"ok": True, **response})
     except ValueError as error:
         message = str(error)

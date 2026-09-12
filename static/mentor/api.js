@@ -1,4 +1,4 @@
-import { state, updateServerChip } from "./workspace.js?v=20260910-cleanup";
+import { state, updateServerChip } from "./workspace.js?v=20260912-names";
 
 const SERVER_WAKE_TIMEOUT_MS = 90000;
 const SERVER_WAKE_RETRY_DELAY_MS = 3000;
@@ -32,7 +32,7 @@ function createRequestError(message, statusCode) {
   return error;
 }
 
-export function isLeetCodeReachabilityError(error) {
+export function isLeetCodeUnavailable(error) {
   const message = String(error?.message || "").toLowerCase();
   return (
     error?.statusCode === 503 ||
@@ -77,7 +77,7 @@ export async function fetchJson(url, options, timeoutMs = 25000) {
   }
 }
 
-function isRecoverableWakeError(error) {
+function canRetryRequest(error) {
   if (!error) {
     return false;
   }
@@ -103,12 +103,12 @@ function isRecoverableWakeError(error) {
   ].some((snippet) => message.includes(snippet));
 }
 
-async function waitForServerWake() {
-  if (state.serverWakePromise) {
-    return state.serverWakePromise;
+async function waitForServer() {
+  if (state.serverWakeTask) {
+    return state.serverWakeTask;
   }
 
-  state.serverWakePromise = (async () => {
+  state.serverWakeTask = (async () => {
     const startedAt = Date.now();
     updateServerChip("Waking server...", "warning");
 
@@ -129,17 +129,17 @@ async function waitForServerWake() {
   })();
 
   try {
-    return await state.serverWakePromise;
+    return await state.serverWakeTask;
   } finally {
-    state.serverWakePromise = null;
+    state.serverWakeTask = null;
   }
 }
 
-export async function runWithWakeRetry(task, handlers = {}) {
+export async function withServerRetry(task, handlers = {}) {
   try {
     return await task();
   } catch (error) {
-    if (!isRecoverableWakeError(error)) {
+    if (!canRetryRequest(error)) {
       throw error;
     }
 
@@ -147,7 +147,7 @@ export async function runWithWakeRetry(task, handlers = {}) {
       handlers.onWakeStart(error);
     }
 
-    await waitForServerWake();
+    await waitForServer();
 
     if (typeof handlers.onRetry === "function") {
       handlers.onRetry();
@@ -157,15 +157,15 @@ export async function runWithWakeRetry(task, handlers = {}) {
   }
 }
 
-export function warmServerInBackground() {
+export function wakeServer() {
   const now = Date.now();
-  if (state.loading || state.serverWakePromise || now - state.lastWakeCheckAt < 30000) {
+  if (state.loading || state.serverWakeTask || now - state.lastWakeCheckAt < 30000) {
     return;
   }
 
   state.lastWakeCheckAt = now;
   updateServerChip("Checking server...", "warning");
-  waitForServerWake().catch(() => {
+  waitForServer().catch(() => {
     updateServerChip("Wake check failed", "error");
   });
 }
