@@ -8,22 +8,18 @@ import time
 from collections import defaultdict, deque
 from threading import Lock
 
-from django.db import transaction
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import render
-from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from .models import StudyRecord, review_interval_for_stage
+from .models import SavedSolution
 from .leetcode import leetcode_service
-from .services import ai_service
+from .services import LANGUAGES, ai_service
 
 
 logger = logging.getLogger(__name__)
-MAX_ASSISTANT_BODY_BYTES = 160_000
-MAX_STUDY_BODY_BYTES = 20_000
-MAX_STUDY_QUEUE_SIZE = 100
+MAX_ASSISTANT_BODY_BYTES = 600_000
 ASSISTANT_RATE_LIMIT = max(1, int(os.environ.get("ASSISTANT_RATE_LIMIT", "20")))
 ASSISTANT_RATE_WINDOW_SECONDS = 5 * 60
 _assistant_request_times: defaultdict[str, deque[float]] = defaultdict(deque)
@@ -35,74 +31,6 @@ class RequestValidationError(ValueError):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
         self.status = status
-
-
-def _get_session_key(request: HttpRequest) -> str:
-    if not request.session.session_key:
-        request.session.create()
-    session_key = request.session.session_key
-    if not session_key:
-        raise RuntimeError("Unable to create a study session.")
-    return session_key
-
-
-def _problem_slug(value: object, *, required: bool = True) -> str | None:
-    if value is None and not required:
-        return None
-    if not isinstance(value, str):
-        raise RequestValidationError("problemSlug must be a string.")
-    slug = value.strip().lower()
-    if not slug:
-        raise RequestValidationError("problemSlug is required.")
-    if len(slug) > 255:
-        raise RequestValidationError("problemSlug is too long.")
-    if not _PROBLEM_SLUG_PATTERN.fullmatch(slug):
-        raise RequestValidationError("problemSlug must be a valid LeetCode slug.")
-    return slug
-
-
-def _optional_string(payload: dict[str, object], key: str, max_length: int, *, allow_blank: bool = True) -> str | None:
-    if key not in payload:
-        return None
-    value = payload[key]
-    if not isinstance(value, str):
-        raise RequestValidationError(f"{key} must be a string.")
-    if len(value) > max_length:
-        raise RequestValidationError(f"{key} is too long.")
-    value = value.strip()
-    if not allow_blank and not value:
-        raise RequestValidationError(f"{key} is required.")
-    return value
-
-
-def _study_record_json(record: StudyRecord, now=None) -> dict[str, object]:
-    now = now or timezone.now()
-    return {
-        "id": record.pk,
-        "problemSlug": record.problem_slug,
-        "problemTitle": record.problem_title,
-        "frontendId": record.frontend_id,
-        "difficulty": record.difficulty,
-        "status": record.status,
-        "confidence": record.confidence,
-        "mistakeCategory": record.mistake_category,
-        "reflection": record.reflection,
-        "reviewStage": record.review_stage,
-        "nextReviewAt": record.next_review_at.isoformat() if record.next_review_at else None,
-        "lastReviewedAt": record.last_reviewed_at.isoformat() if record.last_reviewed_at else None,
-        "createdAt": record.created_at.isoformat(),
-        "updatedAt": record.updated_at.isoformat(),
-        "due": bool(record.next_review_at and record.next_review_at <= now),
-    }
-
-
-def _study_queue(session_key: str, now=None) -> list[dict[str, object]]:
-    now = now or timezone.now()
-    records = (
-        StudyRecord.objects.filter(session_key=session_key, next_review_at__isnull=False)
-        .order_by("next_review_at", "pk")[:MAX_STUDY_QUEUE_SIZE]
-    )
-    return [_study_record_json(record, now) for record in records]
 
 
 def _read_json(request: HttpRequest, max_bytes: int) -> dict[str, object]:
@@ -117,146 +45,55 @@ def _read_json(request: HttpRequest, max_bytes: int) -> dict[str, object]:
     return payload
 
 
-def _check_study_fields(payload: dict[str, object]) -> dict[str, object]:
-    updates: dict[str, object] = {}
-    title = _optional_string(payload, "problemTitle", 300, allow_blank=False)
-    if title is not None:
-        updates["problem_title"] = title
-
-    frontend_id = _optional_string(payload, "frontendId", 30)
-    if frontend_id is not None:
-        updates["frontend_id"] = frontend_id
-
-    difficulty = _optional_string(payload, "difficulty", 10)
-    if difficulty is not None:
-        if difficulty not in {"", "Easy", "Medium", "Hard"}:
-            raise RequestValidationError("difficulty must be Easy, Medium, or Hard.")
-        updates["difficulty"] = difficulty
-
-    if "status" in payload:
-        status = payload["status"]
-        if not isinstance(status, str) or status not in StudyRecord.Status.values:
-            raise RequestValidationError("status is not supported.")
-        updates["status"] = status
-
-    if "confidence" in payload:
-        confidence = payload["confidence"]
-        if isinstance(confidence, bool) or not isinstance(confidence, int) or not 1 <= confidence <= 5:
-            raise RequestValidationError("confidence must be an integer from 1 to 5.")
-        updates["confidence"] = confidence
-
-    if "mistakeCategory" in payload:
-        mistake = payload["mistakeCategory"]
-        valid_mistakes = {"", *StudyRecord.MistakeCategory.values}
-        if not isinstance(mistake, str) or mistake not in valid_mistakes:
-            raise RequestValidationError("mistakeCategory is not supported.")
-        updates["mistake_category"] = mistake
-
-    reflection = _optional_string(payload, "reflection", 4000)
-    if reflection is not None:
-        updates["reflection"] = reflection
-    return updates
-
-
-def _study_response(session_key: str, record: StudyRecord | None) -> JsonResponse:
-    now = timezone.now()
-    return JsonResponse({
-        "ok": True,
-        "record": _study_record_json(record, now) if record else None,
-        "queue": _study_queue(session_key, now),
-    })
-
-
-def _save_study_record(session_key: str, slug: str, payload: dict) -> JsonResponse:
-    updates = _check_study_fields(payload)
-    with transaction.atomic():
-        record, created = StudyRecord.objects.select_for_update().get_or_create(
-            session_key=session_key,
-            problem_slug=slug,
-            defaults={"problem_title": updates.get("problem_title", "")},
-        )
-        if created and "problem_title" not in updates:
-            raise RequestValidationError("problemTitle is required.")
-        for field, value in updates.items():
-            setattr(record, field, value)
-        record.save()
-    return _study_response(session_key, record)
-
-
-def _review_study_record(session_key: str, slug: str, payload: dict) -> JsonResponse:
-    expected_stage = payload.get("expectedReviewStage")
-    if expected_stage is not None and (
-        isinstance(expected_stage, bool)
-        or not isinstance(expected_stage, int)
-        or not 0 <= expected_stage <= 32767
-    ):
-        raise RequestValidationError("expectedReviewStage must be a non-negative integer.")
-    with transaction.atomic():
-        record = StudyRecord.objects.select_for_update().filter(
-            session_key=session_key, problem_slug=slug
-        ).first()
-        if record is None:
-            return JsonResponse(
-                {"ok": False, "message": "Study record not found."}, status=404
-            )
-        if record.next_review_at is None:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "message": "This problem is not scheduled for review.",
-                },
-                status=409,
-            )
-        if expected_stage is not None and record.review_stage != expected_stage:
-            return JsonResponse(
-                {
-                    "ok": False,
-                    "message": "This review was already updated. Refresh and try again.",
-                    "record": _study_record_json(record),
-                },
-                status=409,
-            )
-        reviewed_at = timezone.now()
-        record.review_stage = min(record.review_stage + 1, 32767)
-        record.last_reviewed_at = reviewed_at
-        record.next_review_at = reviewed_at + review_interval_for_stage(record.review_stage)
-        record.save(
-            update_fields=(
-                "review_stage",
-                "last_reviewed_at",
-                "next_review_at",
-                "updated_at",
-            )
-        )
-    return _study_response(session_key, record)
+def _solution_json(solution):
+    return {
+        "problemSlug": solution.problem_slug,
+        "problemTitle": solution.problem_title,
+        "difficulty": solution.difficulty,
+        "language": solution.language,
+        "bestCode": solution.best_code,
+        "updatedAt": solution.updated_at.isoformat(),
+    }
 
 
 @require_http_methods(["GET", "POST"])
-def study_records(request: HttpRequest) -> JsonResponse:
+def history(request):
     try:
-        session_key = _get_session_key(request)
+        if not request.session.session_key:
+            request.session.create()
+        records = SavedSolution.objects.filter(session_key=request.session.session_key)
         if request.method == "GET":
-            slug = _problem_slug(request.GET.get("problem_slug"), required=False)
-            record = None
-            if slug is not None:
-                record = StudyRecord.objects.filter(
-                    session_key=session_key, problem_slug=slug
-                ).first()
-            return _study_response(session_key, record)
+            return JsonResponse({"ok": True, "solutions": [_solution_json(row) for row in records]})
 
-        payload = _read_json(request, MAX_STUDY_BODY_BYTES)
-        action = payload.get("action", "save")
-        if not isinstance(action, str) or action not in {"save", "reviewed"}:
-            raise RequestValidationError("action must be save or reviewed.")
-        slug = _problem_slug(payload.get("problemSlug"))
-        if action == "reviewed":
-            return _review_study_record(session_key, slug, payload)
-        return _save_study_record(session_key, slug, payload)
+        payload = _read_json(request, 400_000)
+        fields = {}
+        for key, column, limit in (
+            ("problemSlug", "problem_slug", 255),
+            ("problemTitle", "problem_title", 300),
+            ("difficulty", "difficulty", 10),
+            ("language", "language", 20),
+            ("bestCode", "best_code", 60000),
+        ):
+            value = payload.get(key)
+            if not isinstance(value, str) or not value.strip() or len(value) > limit:
+                raise RequestValidationError(f"{key} is required and must be at most {limit} characters.")
+            fields[column] = value if key == "bestCode" else value.strip()
+        if not _PROBLEM_SLUG_PATTERN.fullmatch(fields["problem_slug"]):
+            raise RequestValidationError("Invalid problem slug.")
+        if fields["language"] not in LANGUAGES:
+            raise RequestValidationError("Unsupported programming language.")
+        if fields["difficulty"] not in {"Easy", "Medium", "Hard"}:
+            raise RequestValidationError("Invalid difficulty.")
+        slug = fields.pop("problem_slug")
+        solution, _ = SavedSolution.objects.update_or_create(
+            session_key=request.session.session_key, problem_slug=slug, defaults=fields,
+        )
+        return JsonResponse({"ok": True, "solution": _solution_json(solution)})
     except RequestValidationError as error:
         return JsonResponse({"ok": False, "message": str(error)}, status=error.status)
     except Exception:
-        logger.exception("Unexpected study record failure")
-        return JsonResponse({"ok": False, "message": "Unable to update study progress."}, status=500)
+        logger.exception("History request failed")
+        return JsonResponse({"ok": False, "message": "Unable to access saved solutions. Please try again."}, status=500)
 
 
 def _assistant_client_key(request: HttpRequest) -> str:

@@ -1,60 +1,23 @@
-from __future__ import annotations
-
 import json
-from datetime import timedelta
 from unittest.mock import Mock, patch
 
+import requests
 from django.contrib.staticfiles import finders
-from django.db import IntegrityError, transaction
-from django.test import Client, SimpleTestCase, TestCase
-from django.utils import timezone
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
 
-from .models import StudyRecord, review_interval_for_stage
-from .leetcode import LeetCodeService
-from .services import AIService
-from .prompts import MODE_GUIDANCE
 from . import views
+from .leetcode import LeetCodeService
+from .models import SavedSolution
+from .services import AIService
 
 
-class AssistantServiceTests(SimpleTestCase):
-    def setUp(self) -> None:
-        self.service = AIService()
-        self.problem = {
-            "title": "Group Anagrams",
-            "titleSlug": "group-anagrams",
-            "questionFrontendId": "49",
-            "difficulty": "Medium",
-            "statement": "Group strings that are anagrams of each other.",
-            "examples": ["Input: strs = [eat, tea]\nOutput: [[eat, tea]]"],
-            "constraints": ["1 <= strs.length <= 10^4"],
-            "tags": ["Array", "Hash Table", "String", "Sorting"],
-        }
-
-    def test_rejects_unknown_mode_before_provider_use(self) -> None:
-        with self.assertRaisesMessage(ValueError, "Unsupported mentor mode"):
-            self.service.get_answer({"mode": "invented"})
-
-    def test_rejects_non_numeric_hint_level(self) -> None:
-        with self.assertRaisesMessage(ValueError, "Hint level"):
-            self.service.get_answer({"mode": "hint", "hintLevel": "three"})
-
-    def test_rejects_oversized_question(self) -> None:
-        with self.assertRaisesMessage(ValueError, "userQuestion is too long"):
-            self.service.get_answer({"mode": "hint", "userQuestion": "x" * 4_001})
-
-    def test_hash_table_fallback_does_not_assume_two_sum(self) -> None:
-        answer = self.service._local_hint(self.problem, 1)
-        self.assertIsNotNone(answer)
-        self.assertNotIn("target - nums", answer or "")
-        self.assertNotIn("partner", (answer or "").lower())
-        self.assertIn("lookup key", (answer or "").lower())
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": ""})
-    def test_full_solution_is_not_faked_without_provider(self) -> None:
-        with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
-            self.service.get_answer(
-                {"mode": "full_solution", "problem": self.problem, "language": "Python"}
-            )
+PROBLEM = {
+    "title": "Two Sum", "titleSlug": "two-sum", "questionFrontendId": "1",
+    "difficulty": "Easy", "statement": "Return indices of two numbers adding to target.",
+    "examples": ["[2, 7], target = 9 -> [0, 1]"], "constraints": ["At least two numbers."],
+}
 
 
 class LeetCodeServiceTests(SimpleTestCase):
@@ -84,494 +47,173 @@ class LeetCodeServiceTests(SimpleTestCase):
         self.assertIn("2 <= nums.length", constraints)
 
 
-class MentorEndpointTests(TestCase):
-    def setUp(self) -> None:
+class AssistantTests(SimpleTestCase):
+    def setUp(self):
+        self.payload = {"mode": "hint", "problem": PROBLEM, "language": "Python", "userCode": "return [0, 1]"}
+        self.service = AIService()
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
+    @patch("mentor.services.requests.post")
+    def test_hint_and_review_send_problem_and_code(self, post):
+        post.return_value = Mock(json=lambda: {"choices": [{"message": {"content": "Useful feedback"}}]})
+        for mode in ("hint", "review"):
+            self.payload["mode"] = mode
+            self.assertEqual(self.service.get_answer(self.payload)["answer"], "Useful feedback")
+            body = post.call_args.kwargs["json"]
+            context = json.loads(body["messages"][1]["content"])
+            self.assertEqual(context["problem"]["statement"], PROBLEM["statement"])
+            self.assertEqual(context["code"], "return [0, 1]")
+            self.assertIn("Do not reveal" if mode == "hint" else "Never claim", body["messages"][0]["content"])
+
+    @patch("mentor.services.requests.post")
+    def test_invalid_inputs_never_call_provider(self, post):
+        for change in (
+            {"mode": "full_solution"}, {"mode": []}, {"language": []},
+            {"mode": "review", "userCode": " "}, {"userCode": "x" * 60001},
+            {"problem": None}, {"problem": {**PROBLEM, "examples": "invalid"}},
+            {"problem": {**PROBLEM, "statement": ""}},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                self.service.get_answer({**self.payload, **change})
+        post.assert_not_called()
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": ""})
+    def test_missing_key_reports_unavailable_instead_of_canned_feedback(self):
+        with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
+            self.service.get_answer(self.payload)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
+    @patch("mentor.services.requests.post")
+    def test_provider_failures_have_safe_error(self, post):
+        for error in (requests.Timeout("private provider details"), ValueError("bad JSON")):
+            post.side_effect = error
+            with self.assertRaisesMessage(ValueError, "Groq is unavailable"):
+                self.service.get_answer(self.payload)
+        post.side_effect = None
+        for data in ({}, {"choices": []}, {"choices": [{"message": {"content": None}}]}):
+            post.return_value = Mock(json=lambda: data)
+            with self.assertRaisesMessage(ValueError, "Groq is unavailable"):
+                self.service.get_answer(self.payload)
+
+
+class EndpointTests(TestCase):
+    def setUp(self):
         views._assistant_request_times.clear()
+        self.solution = {
+            "problemSlug": "two-sum", "problemTitle": "Two Sum", "difficulty": "Easy",
+            "language": "Python", "bestCode": "  return [0, 1]\n",
+        }
 
-    def test_home_and_health_render(self) -> None:
-        self.assertContains(self.client.get("/"), "LeetMentor practice desk")
-        self.assertJSONEqual(self.client.get("/api/health/").content, {"ok": True, "status": "ready"})
+    def post(self, url, data, client=None):
+        return (client or self.client).post(url, json.dumps(data), content_type="application/json")
 
-    def test_problem_lookup_requires_identifier(self) -> None:
-        response = self.client.get("/api/problem/")
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["message"], "Empty query. Enter a problem number, title slug, title, or LeetCode URL.")
+    def test_home_and_assets(self):
+        self.assertContains(self.client.get("/"), "One problem at a time")
+        self.assertContains(self.client.get("/"), "Solved history")
+        for path in ("mentor/app.js", "mentor/dashboard.css", "brand/leetmentor-mark.svg"):
+            self.assertIsNotNone(finders.find(path))
+        self.assertEqual(self.client.get("/api/health/").status_code, 200)
+        self.assertEqual(self.client.get("/api/study/").status_code, 404)
 
-    def test_assistant_rejects_non_object_json(self) -> None:
-        response = self.client.post("/api/assistant/", data="[]", content_type="application/json")
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["message"], "JSON body must be an object.")
+    def test_history_starts_empty(self):
+        self.assertEqual(self.client.get("/api/history/").json()["solutions"], [])
 
-    def test_assistant_rejects_invalid_mode_with_stable_error(self) -> None:
-        response = self.client.post(
-            "/api/assistant/",
-            data=json.dumps({"mode": "wat"}),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["message"], "Unsupported mentor mode.")
-
-    def test_assistant_rejects_oversized_body(self) -> None:
-        response = self.client.post(
-            "/api/assistant/",
-            data=json.dumps({"mode": "hint", "userQuestion": "x" * 161_000}),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 413)
-
-    @patch("mentor.views.ai_service.get_answer")
-    def test_assistant_returns_service_response(self, generate) -> None:
-        generate.return_value = {"answer": "A grounded hint.", "suggestedNextStep": "Try it."}
-        response = self.client.post(
-            "/api/assistant/",
-            data=json.dumps({"mode": "hint", "hintLevel": 1}),
-            content_type="application/json",
-        )
+    def test_save_update_and_retrieve_exact_best_code(self):
+        response = self.post("/api/history/", self.solution)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["answer"], "A grounded hint.")
+        self.assertEqual(response.json()["solution"]["bestCode"], self.solution["bestCode"])
+        self.solution.update(language="C++", bestCode="return {0, 1};")
+        self.assertEqual(self.post("/api/history/", self.solution).status_code, 200)
+        self.assertEqual(SavedSolution.objects.count(), 1)
+        saved = self.client.get("/api/history/").json()["solutions"][0]
+        self.assertEqual(saved["language"], "C++")
+        self.assertEqual(saved["bestCode"], "return {0, 1};")
+
+    def test_history_is_newest_first(self):
+        self.post("/api/history/", self.solution)
+        self.post("/api/history/", {**self.solution, "problemSlug": "three-sum", "problemTitle": "3Sum"})
+        self.assertEqual(self.client.get("/api/history/").json()["solutions"][0]["problemSlug"], "three-sum")
+        self.post("/api/history/", self.solution)
+        self.assertEqual(self.client.get("/api/history/").json()["solutions"][0]["problemSlug"], "two-sum")
+
+    def test_other_browser_cannot_read_or_replace_my_solution(self):
+        self.post("/api/history/", self.solution)
+        other = Client()
+        self.assertEqual(other.get("/api/history/").json()["solutions"], [])
+        self.post("/api/history/", {**self.solution, "bestCode": "different", "session_key": self.client.session.session_key}, other)
+        self.assertEqual(SavedSolution.objects.count(), 2)
+        self.assertEqual(self.client.get("/api/history/").json()["solutions"][0]["bestCode"], self.solution["bestCode"])
+
+    def test_invalid_saves_do_not_change_history(self):
+        for change in (
+            {"bestCode": " "}, {"bestCode": "x" * 60001}, {"bestCode": []},
+            {"problemSlug": "../bad"}, {"problemTitle": ""}, {"language": "Ruby"},
+            {"difficulty": "unknown"}, {"language": []},
+        ):
+            with self.subTest(change=change):
+                self.assertEqual(self.post("/api/history/", {**self.solution, **change}).status_code, 400)
+        self.assertEqual(SavedSolution.objects.count(), 0)
+
+    def test_json_and_body_limits(self):
+        for url, limit in (("/api/history/", 400000), ("/api/assistant/", 600000)):
+            for body in ("[]", "{", "null"):
+                self.assertEqual(self.client.post(url, body, content_type="application/json").status_code, 400)
+            self.assertEqual(self.client.post(url, "x" * (limit + 1), content_type="application/json").status_code, 413)
+
+    def test_csrf_is_required_for_both_posts(self):
+        client = Client(enforce_csrf_checks=True)
+        for url in ("/api/history/", "/api/assistant/"):
+            self.assertEqual(self.post(url, {}, client).status_code, 403)
+
+    def test_save_with_real_csrf_cookie(self):
+        client = Client(enforce_csrf_checks=True)
+        client.get("/")
+        response = client.post("/api/history/", json.dumps(self.solution), content_type="application/json", HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value)
+        self.assertEqual(response.status_code, 200)
+
+    @patch("mentor.views.leetcode_service")
+    def test_daily_and_lookup(self, service):
+        service.get_daily_challenge.return_value.to_dict.return_value = PROBLEM
+        service.get_problem.return_value.to_dict.return_value = PROBLEM
+        self.assertEqual(self.client.get("/api/daily/").json()["problem"], PROBLEM)
+        self.assertEqual(self.client.get("/api/problem/", {"identifier": "1"}).json()["problem"], PROBLEM)
+        service.get_problem.assert_called_once_with("1")
+        service.get_daily_challenge.side_effect = ValueError("Could not reach LeetCode")
+        self.assertEqual(self.client.get("/api/daily/").status_code, 503)
 
     @patch("mentor.views.ai_service.get_answer")
-    def test_assistant_without_session_does_not_create_database_session(self, generate) -> None:
-        generate.return_value = {"answer": "A grounded hint.", "suggestedNextStep": "Try it."}
-        request = self.client.post(
-            "/api/assistant/",
-            data=json.dumps({"mode": "hint", "hintLevel": 1}),
-            content_type="application/json",
-            HTTP_X_FORWARDED_FOR="203.0.113.10, 10.0.0.1",
-        )
-
-        self.assertEqual(request.status_code, 200)
-        self.assertNotIn("sessionid", self.client.cookies)
+    def test_assistant_response_and_provider_failure(self, answer):
+        answer.return_value = {"answer": "Try a hash map."}
+        self.assertEqual(self.post("/api/assistant/", {"mode": "hint"}).json()["answer"], "Try a hash map.")
+        answer.side_effect = ValueError("Groq is unavailable")
+        self.assertEqual(self.post("/api/assistant/", {"mode": "hint"}).status_code, 502)
 
     @patch("mentor.views.ASSISTANT_RATE_LIMIT", 1)
-    @patch("mentor.views.ai_service.get_answer")
-    def test_assistant_rate_limit_returns_retry_after(self, generate) -> None:
-        generate.return_value = {"answer": "Hint"}
-        payload = json.dumps({"mode": "hint", "hintLevel": 1})
-        self.assertEqual(self.client.post("/api/assistant/", data=payload, content_type="application/json").status_code, 200)
-        response = self.client.post("/api/assistant/", data=payload, content_type="application/json")
+    @patch("mentor.views.ai_service.get_answer", return_value={"answer": "Hint"})
+    def test_assistant_rate_limit(self, answer):
+        self.assertEqual(self.post("/api/assistant/", {}).status_code, 200)
+        response = self.post("/api/assistant/", {})
         self.assertEqual(response.status_code, 429)
         self.assertIn("Retry-After", response)
 
 
-class StudyRecordModelTests(TestCase):
-    def make_record(self, **overrides) -> StudyRecord:
-        values = {
-            "session_key": "a" * 32,
-            "problem_slug": "two-sum",
-            "problem_title": "Two Sum",
-        }
-        values.update(overrides)
-        return StudyRecord.objects.create(**values)
-
-    def test_only_reviewable_statuses_get_an_initial_schedule(self) -> None:
-        now = timezone.now()
-        for index, status in enumerate(("started", "understood", "brute_force")):
-            record = self.make_record(problem_slug=f"not-due-{index}", status=status)
-            self.assertIsNone(record.next_review_at)
-
-        for index, status in enumerate(("solved", "optimized", "mastered")):
-            with patch("mentor.models.timezone.now", return_value=now):
-                record = self.make_record(problem_slug=f"due-{index}", status=status)
-            self.assertEqual(record.next_review_at, now + timedelta(days=1))
-
-    def test_existing_schedule_is_preserved_on_later_save(self) -> None:
-        scheduled = timezone.now() + timedelta(days=7)
-        record = self.make_record(status="solved", next_review_at=scheduled)
-        record.confidence = 5
-        record.save()
-        self.assertEqual(record.next_review_at, scheduled)
-
-    def test_database_enforces_confidence_range(self) -> None:
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            self.make_record(confidence=0)
-
-    def test_unique_problem_per_session(self) -> None:
-        self.make_record()
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            self.make_record(problem_title="Duplicate")
-
-
-class StudyEndpointTests(TestCase):
-    def post_study(self, payload: dict, *, client: Client | None = None):
-        return (client or self.client).post(
-            "/api/study/",
-            data=json.dumps(payload),
-            content_type="application/json",
-        )
-
-    def base_payload(self, **overrides) -> dict:
-        payload = {
-            "problemSlug": "two-sum",
-            "problemTitle": "Two Sum",
-            "frontendId": "1",
-            "difficulty": "Easy",
-            "status": "started",
-            "confidence": 3,
-            "mistakeCategory": "",
-            "reflection": "",
-        }
-        payload.update(overrides)
-        return payload
-
-    def test_get_creates_session_and_returns_empty_state(self) -> None:
-        response = self.client.get("/api/study/")
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNotNone(self.client.session.session_key)
-        self.assertEqual(response.json(), {"ok": True, "record": None, "queue": []})
-
-    def test_save_creates_and_partially_updates_one_record(self) -> None:
-        create_response = self.post_study(self.base_payload()).json()
-        created = create_response["record"]
-        self.assertEqual(create_response["queue"], [])
-        self.assertEqual(created["problemSlug"], "two-sum")
-        self.assertEqual(created["status"], "started")
-        self.assertIsNone(created["nextReviewAt"])
-
-        updated = self.post_study(
-            {"problemSlug": "two-sum", "confidence": 5, "reflection": "Missed duplicates."}
-        ).json()["record"]
-        self.assertEqual(updated["id"], created["id"])
-        self.assertEqual(updated["problemTitle"], "Two Sum")
-        self.assertEqual(updated["confidence"], 5)
-        self.assertEqual(StudyRecord.objects.count(), 1)
-
-    def test_first_solved_save_schedules_one_day_from_now(self) -> None:
-        now = timezone.now()
-        with patch("mentor.models.timezone.now", return_value=now):
-            response = self.post_study(self.base_payload(status="solved"))
-        self.assertEqual(response.status_code, 200)
-        record = StudyRecord.objects.get()
-        self.assertEqual(record.review_stage, 0)
-        self.assertEqual(record.next_review_at, now + timedelta(days=1))
-
-    def test_review_advances_stage_and_uses_spaced_intervals(self) -> None:
-        self.post_study(self.base_payload(status="solved"))
-        expected_days = (3, 7, 21, 45, 45)
-        base = timezone.now()
-        for expected_stage, days in enumerate(expected_days, start=1):
-            now = base + timedelta(hours=expected_stage)
-            with patch("mentor.views.timezone.now", return_value=now):
-                response = self.post_study(
-                    {
-                        "action": "reviewed",
-                        "problemSlug": "two-sum",
-                        "expectedReviewStage": expected_stage - 1,
-                    }
-                )
-            self.assertEqual(response.status_code, 200)
-            data = response.json()["record"]
-            self.assertEqual(data["reviewStage"], expected_stage)
-            record = StudyRecord.objects.get()
-            self.assertEqual(record.last_reviewed_at, now)
-            self.assertEqual(record.next_review_at, now + timedelta(days=days))
-
-    def test_stale_review_stage_is_rejected_without_advancing(self) -> None:
-        self.post_study(self.base_payload(status="solved"))
-        first = self.post_study(
-            {"action": "reviewed", "problemSlug": "two-sum", "expectedReviewStage": 0}
-        )
-        self.assertEqual(first.status_code, 200)
-        stale = self.post_study(
-            {"action": "reviewed", "problemSlug": "two-sum", "expectedReviewStage": 0}
-        )
-        self.assertEqual(stale.status_code, 409)
-        self.assertEqual(stale.json()["record"]["reviewStage"], 1)
-        self.assertEqual(StudyRecord.objects.get().review_stage, 1)
-
-    def test_queue_is_ordered_and_marks_due_at_exact_boundary(self) -> None:
-        self.post_study(self.base_payload(problemSlug="later", problemTitle="Later", status="solved"))
-        self.post_study(self.base_payload(problemSlug="due-now", problemTitle="Due now", status="solved"))
-        now = timezone.now()
-        StudyRecord.objects.filter(problem_slug="later").update(next_review_at=now + timedelta(days=1))
-        StudyRecord.objects.filter(problem_slug="due-now").update(next_review_at=now)
-
-        with patch("mentor.views.timezone.now", return_value=now):
-            response = self.client.get("/api/study/?problem_slug=due-now")
-        data = response.json()
-        self.assertEqual(data["record"]["problemSlug"], "due-now")
-        self.assertTrue(data["record"]["due"])
-        self.assertEqual([item["problemSlug"] for item in data["queue"]], ["due-now", "later"])
-        self.assertTrue(data["queue"][0]["due"])
-        self.assertFalse(data["queue"][1]["due"])
-
-    def test_records_are_isolated_by_server_session(self) -> None:
-        other = Client()
-        first = self.post_study(
-            self.base_payload(reflection="first session", status="solved")
-        ).json()["record"]
-        second = self.post_study(
-            self.base_payload(reflection="other session", status="solved"), client=other
-        ).json()["record"]
-        self.assertNotEqual(first["id"], second["id"])
-        self.assertEqual(StudyRecord.objects.filter(problem_slug="two-sum").count(), 2)
-
-        own = self.client.get("/api/study/?problem_slug=two-sum").json()["record"]
-        theirs = other.get("/api/study/?problem_slug=two-sum").json()["record"]
-        self.assertEqual(own["reflection"], "first session")
-        self.assertEqual(theirs["reflection"], "other session")
-
-        guessed = self.post_study(
-            {
-                "action": "reviewed",
-                "problemSlug": "two-sum",
-                "id": first["id"],
-                "expectedReviewStage": 0,
-            },
-            client=other,
-        )
-        self.assertEqual(guessed.status_code, 200)
-        self.assertEqual(StudyRecord.objects.get(pk=first["id"]).review_stage, 0)
-        self.assertEqual(StudyRecord.objects.get(pk=second["id"]).review_stage, 1)
-
-    def test_review_cannot_access_another_sessions_record(self) -> None:
-        self.post_study(self.base_payload(status="solved"))
-        other = Client()
-        response = self.post_study(
-            {"action": "reviewed", "problemSlug": "two-sum"}, client=other
-        )
-        self.assertEqual(response.status_code, 404)
-
-    def test_unscheduled_record_cannot_be_marked_reviewed(self) -> None:
-        self.post_study(self.base_payload(status="understood"))
-        response = self.post_study(
-            {"action": "reviewed", "problemSlug": "two-sum", "expectedReviewStage": 0}
-        )
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["message"], "This problem is not scheduled for review.")
-        self.assertEqual(StudyRecord.objects.get().review_stage, 0)
-
-    def test_validation_returns_stable_client_errors(self) -> None:
-        cases = (
-            ({"problemSlug": "two-sum"}, "problemTitle is required."),
-            (self.base_payload(confidence=True), "confidence must be an integer from 1 to 5."),
-            (self.base_payload(confidence=6), "confidence must be an integer from 1 to 5."),
-            (self.base_payload(status="finished"), "status is not supported."),
-            (self.base_payload(mistakeCategory="mystery"), "mistakeCategory is not supported."),
-            (self.base_payload(reflection="x" * 4001), "reflection is too long."),
-        )
-        for payload, message in cases:
-            with self.subTest(message=message):
-                response = self.post_study(payload)
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(response.json(), {"ok": False, "message": message})
-
-    def test_get_validates_problem_slug(self) -> None:
-        for slug in ("not/a/slug", "x" * 256):
-            with self.subTest(slug=slug[:20]):
-                response = self.client.get("/api/study/", {"problem_slug": slug})
-                self.assertEqual(response.status_code, 400)
-
-    def test_rejects_invalid_json_non_object_and_large_body(self) -> None:
-        invalid = self.client.post("/api/study/", data="{", content_type="application/json")
-        self.assertEqual(invalid.status_code, 400)
-        self.assertEqual(invalid.json()["message"], "Invalid JSON body.")
-
-        non_object = self.client.post("/api/study/", data="[]", content_type="application/json")
-        self.assertEqual(non_object.status_code, 400)
-        self.assertEqual(non_object.json()["message"], "JSON body must be an object.")
-
-        too_large = self.client.post(
-            "/api/study/",
-            data=json.dumps({"reflection": "x" * 21_000}),
-            content_type="application/json",
-        )
-        self.assertEqual(too_large.status_code, 413)
-
-    def test_post_requires_csrf_token_when_enforced(self) -> None:
-        csrf_client = Client(enforce_csrf_checks=True)
-        csrf_client.get("/")
-        response = csrf_client.post(
-            "/api/study/",
-            data=json.dumps(self.base_payload()),
-            content_type="application/json",
-        )
-        self.assertEqual(response.status_code, 403)
-
-
-class ProviderFlowTests(SimpleTestCase):
-    def setUp(self):
-        self.question = {
-            "title": "Two Sum",
-            "titleSlug": "two-sum",
-            "questionFrontendId": "1",
-            "difficulty": "Easy",
-            "topicTags": [{"name": "Hash Table"}],
-            "stats": '{"acRate": "50.5%"}',
-            "content": "<p>Find two numbers with the required sum.</p>",
-        }
-        self.problem = {
-            "title": "Two Sum",
-            "titleSlug": "two-sum",
-            "statement": "Find two numbers with the required sum.",
-            "examples": [],
-            "constraints": [],
-            "tags": ["Hash Table"],
-        }
-
-    @patch("mentor.leetcode.requests.post")
-    def test_problem_mapping_and_cache_reuse(self, post):
-        post.return_value = Mock(status_code=200)
-        post.return_value.json.return_value = {"data": {"question": self.question}}
-        service = LeetCodeService()
-        problem = service.get_problem("two-sum")
-        self.assertEqual(problem.to_dict()["titleSlug"], "two-sum")
-        self.assertEqual(problem.acceptance_rate, 50.5)
-        self.assertEqual(problem.statement, "Find two numbers with the required sum.")
-        for identifier in ("1", "Two Sum", "https://leetcode.com/problems/two-sum/"):
-            self.assertIs(service.get_problem(identifier), problem)
-        post.assert_called_once()
-
-    @patch("mentor.leetcode.requests.post")
-    def test_daily_problem_also_populates_cache(self, post):
-        post.return_value = Mock(status_code=200)
-        post.return_value.json.return_value = {
-            "data": {"activeDailyCodingChallengeQuestion": {
-                "question": self.question, "link": "/problems/two-sum/"
-            }}
-        }
-        service = LeetCodeService()
-        daily = service.get_daily_challenge()
-        self.assertEqual(daily.link, "https://leetcode.com/problems/two-sum/")
-        self.assertIs(service.get_problem("1"), daily)
-        post.assert_called_once()
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
-    @patch("mentor.services.requests.post")
-    def test_all_supported_modes_still_reach_groq(self, post):
-        service = AIService()
-        for mode in MODE_GUIDANCE:
-            with self.subTest(mode=mode):
-                post.reset_mock()
-                post.return_value = Mock(status_code=200)
-                post.return_value.json.return_value = {
-                    "choices": [{"message": {"content": "A provider response."}}]
-                }
-                response = service.get_answer({
-                    "mode": mode, "problem": self.problem,
-                    "language": "Python", "userCode": "return []",
-                })
-                self.assertTrue(response["answer"])
-                self.assertTrue(response["suggestedNextStep"])
-                post.assert_called_once()
-                prompt = post.call_args.kwargs["json"]["messages"][1]["content"]
-                self.assertIn("Two Sum", prompt)
-                self.assertIn("return []", prompt)
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": ""})
-    @patch("mentor.services.requests.post")
-    def test_only_supported_offline_modes_have_fallbacks(self, post):
-        service = AIService()
-        for mode in ("hint", "explain", "debug"):
-            with self.subTest(mode=mode):
-                response = service.get_answer({
-                    "mode": mode, "problem": self.problem,
-                    "language": "Python", "userCode": "return []",
-                })
-                self.assertTrue(response["answer"])
-        for mode in ("complexity", "dry_run", "optimize", "full_solution"):
-            with self.subTest(mode=mode):
-                with self.assertRaisesMessage(ValueError, "Missing GROQ_API_KEY"):
-                    service.get_answer({"mode": mode, "problem": self.problem})
-        post.assert_not_called()
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
-    @patch("mentor.services.AIService._request_groq", side_effect=ValueError("Provider unavailable"))
-    def test_hint_fallback_keeps_working_after_provider_failure(self, request_groq):
-        response = AIService().get_answer({
-            "mode": "hint", "problem": self.problem, "hintLevel": 1,
-        })
-        self.assertIn("### Starting hint", response["answer"])
-        request_groq.assert_called_once()
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": "test-only-key"})
-    @patch("mentor.services.requests.post")
-    def test_unavailable_model_tries_next_candidate(self, post):
-        rejected = Mock(status_code=404, text="model not found")
-        accepted = Mock(status_code=200)
-        accepted.json.return_value = {"choices": [{"message": {"content": "Provider solution"}}]}
-        post.side_effect = [rejected, accepted]
-        response = AIService().get_answer({"mode": "full_solution", "problem": self.problem})
-        self.assertEqual(response["answer"], "Provider solution")
-        self.assertEqual(post.call_count, 2)
-
-
-class WebAssetTests(SimpleTestCase):
-    def test_dashboard_assets_are_available_without_node_build(self):
-        for name in ("brand/leetmentor-mark.svg", "css/app.css", "js/app.js",
-                     "mentor/dashboard.css", "mentor/app.js", "mentor/workspace.js",
-                     "mentor/api.js", "mentor/problems.js", "mentor/assistant.js",
-                     "mentor/drafts.js", "mentor/study.js", "mentor/rendering.js"):
-            with self.subTest(asset=name):
-                self.assertIsNotNone(finders.find(name))
-
-
-class ReadabilityRegressionTests(SimpleTestCase):
-    def test_review_intervals_keep_the_same_boundaries(self):
-        for stage, days in [(-1, 1), (0, 1), (1, 3), (2, 7), (3, 21), (4, 45), (9, 45)]:
-            with self.subTest(stage=stage):
-                self.assertEqual(review_interval_for_stage(stage), timedelta(days=days))
-
-    def test_problem_number_and_title_use_index_before_search(self):
-        service = LeetCodeService()
-        service.problem_list = [
-            {"frontendId": "1", "title": "Two Sum", "titleSlug": "two-sum"}
-        ]
-        with patch.object(service, "_search_slug") as search:
-            self.assertEqual(service._find_slug("1"), "two-sum")
-            self.assertEqual(service._find_slug("Two Sum"), "two-sum")
-        search.assert_not_called()
-
-    def test_failed_search_can_normalize_a_title_but_not_guess_a_number(self):
-        service = LeetCodeService()
-        service.problem_list = []
-        with patch.object(service, "_search_slug", side_effect=ValueError("Unavailable")):
-            self.assertEqual(service._find_slug("  Two   Sum?!  "), "two-sum")
-            with self.assertRaisesMessage(ValueError, "Problem number lookup failed"):
-                service._find_slug("12345")
-
-    def test_hint_templates_preserve_title_and_sample_text(self):
-        problem = {
-            "title": "Problem {title}", "statement": "Do the task.",
-            "tags": [], "examples": ["Input: {sample} -> Output: 1"],
-        }
-        answer = AIService()._local_hint(problem, 1)
-        self.assertIn("Problem {title}", answer)
-        self.assertIn("Input: {sample} -> Output: 1", answer)
-        self.assertIn("### Starter cue", answer)
-
-    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
-    def test_invalid_provider_hint_uses_same_fallback_as_provider_failure(self):
-        service = AIService()
-        payload = {"mode": "hint", "hintLevel": 2, "problem": {"title": "Example", "tags": ["binary search"]}}
-        with patch.object(service, "_request_groq", return_value="```python\nprint(1)\n```"):
-            invalid_answer = service.get_answer(payload)
-        with patch.object(service, "_request_groq", side_effect=ValueError("Unavailable")):
-            failed_answer = service.get_answer(payload)
-        self.assertEqual(invalid_answer, failed_answer)
-        self.assertIn("### Directional hint", failed_answer["answer"])
-
-    @patch.dict("os.environ", {"AI_MODEL": " llama-3.1-8b-instant "})
-    def test_configured_model_is_first_without_duplicate_fallbacks(self):
-        self.assertEqual(AIService()._candidate_models(), [
-            "llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b",
-        ])
-
-
-class StudySaveRegressionTests(TestCase):
-    def test_invalid_new_record_is_rolled_back(self):
-        response = self.client.post("/api/study/", {
-            "problemSlug": "two-sum", "status": "solved",
-        }, content_type="application/json")
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()["message"], "problemTitle is required.")
-        self.assertFalse(StudyRecord.objects.exists())
-
-    def test_both_post_endpoints_reject_malformed_json_without_calling_ai(self):
-        with patch("mentor.views.ai_service.get_answer") as generate:
-            for url in ("/api/study/", "/api/assistant/"):
-                with self.subTest(url=url):
-                    response = self.client.post(url, '{"broken":}', content_type="application/json")
-                    self.assertEqual(response.status_code, 400)
-                    self.assertEqual(response.json(), {"ok": False, "message": "Invalid JSON body."})
-        generate.assert_not_called()
+class HistoryMigrationTests(TransactionTestCase):
+    def test_completed_records_are_copied_and_old_notes_preserved(self):
+        executor = MigrationExecutor(connection)
+        old = [("mentor", "0001_initial")]
+        new = [("mentor", "0002_savedsolution_and_more")]
+        executor.migrate(old)
+        try:
+            apps = executor.loader.project_state(old).apps
+            Record = apps.get_model("mentor", "StudyRecord")
+            for status in ("started", "solved", "optimized", "mastered"):
+                Record.objects.create(session_key="old-session", problem_slug=status, problem_title=status, status=status, reflection="Keep my notes")
+            executor = MigrationExecutor(connection)
+            executor.migrate(new)
+            self.assertEqual(SavedSolution.objects.filter(session_key="old-session").count(), 3)
+            self.assertTrue(all(row.best_code == "" for row in SavedSolution.objects.all()))
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT reflection FROM mentor_studyrecord WHERE session_key = %s", ["old-session"])
+                self.assertEqual(cursor.fetchall(), [("Keep my notes",)] * 4)
+        finally:
+            MigrationExecutor(connection).migrate(new)

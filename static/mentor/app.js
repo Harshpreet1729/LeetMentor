@@ -1,196 +1,180 @@
-import {
-  state,
-  elements,
-  setText,
-  setStatusTone,
-  updateServerChip,
-  setActiveMode,
-  updateEditorFilename
-} from "./workspace.js?v=20260912-names";
-import { renderAssistantOutput } from "./rendering.js?v=20260912-names";
-import {
-  saveDraftFor,
-  restoreDraftFor,
-  saveWorkspace,
-  queueAutosave,
-  restoreWorkspace
-} from "./drafts.js?v=20260912-names";
-import { SERVER_IDLE_THRESHOLD_MS, wakeServer } from "./api.js?v=20260912-names";
-import { loadStudyData, saveStudyRecord, markStudyReviewed } from "./study.js?v=20260912-names";
-import { showProblem, loadDaily, loadProblem } from "./problems.js?v=20260912-names";
-import {
-  isAnswerOpen,
-  setAnswerOpen,
-  openChatGpt,
-  openYouTube,
-  runAssistant
-} from "./assistant.js?v=20260912-names";
-elements.modeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const mode = button.getAttribute("data-mode");
-    setActiveMode(mode);
-    runAssistant(mode);
+const $ = (id) => document.getElementById(id);
+let problem = null;
+let language = "Python";
+let busy = false;
+
+function status(id, message, error = false) {
+  $(id).textContent = message;
+  $(id).classList.toggle("error", error);
+}
+
+function storage(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch {
+    $("draft-status").textContent = "Browser storage is unavailable. Copy your draft before leaving.";
+  }
+  return null;
+}
+
+function draftKey() {
+  return `leetmentor.draft.v2.${encodeURIComponent(problem?.titleSlug || "scratchpad")}.${encodeURIComponent(language)}`;
+}
+
+function saveDraft() {
+  storage(draftKey(), $("code").value);
+}
+
+async function request(url, payload) {
+  const response = await fetch(url, {
+    method: payload === undefined ? "GET" : "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content,
+    },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+    signal: AbortSignal.timeout(90000),
   });
-});
-
-elements.dailyBtn.addEventListener("click", loadDaily);
-elements.loadProblemBtn.addEventListener("click", loadProblem);
-if (elements.saveStudyBtn) {
-  elements.saveStudyBtn.addEventListener("click", saveStudyRecord);
+  let data;
+  try { data = await response.json(); }
+  catch { throw new Error("The server could not answer. Please try again."); }
+  if (!response.ok || !data.ok) throw new Error(data.message || "Request failed. Please try again.");
+  return data;
 }
-if (elements.reviewQueue) {
-  elements.reviewQueue.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target.closest("button") : null;
-    if (!target) {
-      return;
-    }
 
-    const loadSlug = target.getAttribute("data-study-load-slug");
-    if (loadSlug) {
-      elements.problemIdentifier.value = loadSlug;
-      saveWorkspace();
-      void loadProblem();
-      return;
-    }
+// Keep requests sequential so switching problems cannot show an old answer.
+async function run(statusId, message, action) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll("button, select").forEach((element) => { element.disabled = true; });
+  status(statusId, message);
+  try { await action(); }
+  catch (error) {
+    status(statusId, error.name === "TimeoutError" ? "The request timed out. Please try again." : error.message, true);
+  } finally {
+    busy = false;
+    document.querySelectorAll("button, select").forEach((element) => { element.disabled = false; });
+  }
+}
 
-    const reviewSlug = target.getAttribute("data-review-slug");
-    if (reviewSlug) {
-      const expectedReviewStage = Number(target.getAttribute("data-review-stage"));
-      void markStudyReviewed(reviewSlug, expectedReviewStage);
-    }
+function showProblem(next, saved = null) {
+  saveDraft();
+  if (saved?.language) {
+    language = saved.language;
+    $("language").value = language;
+    storage("leetmentor.language", language);
+  }
+  problem = next;
+  $("problem-title").textContent = problem.title;
+  $("problem-meta").textContent = `#${problem.questionFrontendId} · ${problem.difficulty}`;
+  $("leetcode-link").href = `https://leetcode.com/problems/${encodeURIComponent(problem.titleSlug)}/`;
+  $("leetcode-link").hidden = false;
+  $("problem-content").textContent = problem.statement || "Read the full statement on LeetCode.";
+  for (const [heading, values] of [["Examples", problem.examples], ["Constraints", problem.constraints]]) {
+    if (!values?.length) continue;
+    const title = document.createElement("h3");
+    title.textContent = heading;
+    const text = document.createElement("div");
+    text.textContent = values.join("\n\n");
+    $("problem-content").append(title, text);
+  }
+  $("code").value = storage(draftKey()) ?? saved?.bestCode ?? "";
+  $("feedback").hidden = true;
+  status("action-status", "");
+  storage("leetmentor.problemSnapshot", JSON.stringify(problem));
+}
+
+function loadProblem(identifier, saved = null) {
+  return run("problem-status", "Loading problem...", async () => {
+    const url = identifier === null ? "/api/daily/" : `/api/problem/?identifier=${encodeURIComponent(identifier)}`;
+    const data = await request(url);
+    showProblem(data.problem, saved);
+    status("problem-status", "Problem loaded.");
   });
 }
-if (elements.askChatgptBtn) {
-  elements.askChatgptBtn.addEventListener("click", openChatGpt);
-}
-if (elements.youtubeSearchBtn) {
-  elements.youtubeSearchBtn.addEventListener("click", openYouTube);
-}
-if (elements.mentorResponseBackdrop) {
-  elements.mentorResponseBackdrop.addEventListener("click", () => {
-    setAnswerOpen(false);
+
+function ask(mode) {
+  return run("action-status", mode === "hint" ? "Getting a hint..." : "Reviewing your code...", async () => {
+    if (!problem) throw new Error("Load a problem first.");
+    if (mode === "review" && !$("code").value.trim()) throw new Error("Paste your code first.");
+    $("feedback").hidden = true;
+    const data = await request("/api/assistant/", {mode, problem, language, userCode: $("code").value});
+    $("feedback-title").textContent = mode === "hint" ? "Hint" : "Code review";
+    $("answer").textContent = data.answer;
+    $("feedback").hidden = false;
+    status("action-status", "");
   });
 }
-if (elements.closeOutputBtn) {
-  elements.closeOutputBtn.addEventListener("click", () => {
-    setAnswerOpen(false);
+
+async function refreshHistory() {
+  const data = await request("/api/history/");
+  $("history-list").replaceChildren();
+  status("history-status", data.solutions.length ? `${data.solutions.length} saved problem${data.solutions.length === 1 ? "" : "s"}.` : "No solved problems yet. Save your first solution above.");
+  for (const saved of data.solutions) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = saved.problemTitle;
+    const meta = document.createElement("span");
+    meta.textContent = `${saved.difficulty} · ${saved.language || "No saved code yet"} · ${new Date(saved.updatedAt).toLocaleDateString()}`;
+    summary.append(meta);
+    const code = document.createElement("pre");
+    code.textContent = saved.bestCode || "Completed in the old tracker. Save a solution to add your best code.";
+    const open = document.createElement("button");
+    open.className = "secondary";
+    open.textContent = "Open problem";
+    open.addEventListener("click", () => {
+      $("identifier").value = saved.problemSlug;
+      void loadProblem(saved.problemSlug, saved);
+      $("problem-title").scrollIntoView({block: "start"});
+    });
+    details.append(summary, code, open);
+    $("history-list").append(details);
+  }
+}
+
+function saveSolution() {
+  return run("action-status", "Saving solution...", async () => {
+    if (!problem) throw new Error("Load a problem first.");
+    if (!$("code").value.trim()) throw new Error("Paste your best code before saving.");
+    saveDraft();
+    await request("/api/history/", {
+      problemSlug: problem.titleSlug, problemTitle: problem.title,
+      difficulty: problem.difficulty, language, bestCode: $("code").value,
+    });
+    status("action-status", "Saved as your best solution.");
+    try { await refreshHistory(); }
+    catch { status("history-status", "Solution saved. Refresh to reload history.", true); }
   });
 }
-if (elements.copyOutputBtn) {
-  elements.copyOutputBtn.addEventListener("click", async () => {
-    const text = state.lastAssistantText.trim();
-    if (!text) {
-      setStatusTone(elements.assistantStatus, "warning");
-      setText(elements.assistantStatus, "There is no mentor output to copy yet.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setStatusTone(elements.assistantStatus, "success");
-      setText(elements.assistantStatus, "Mentor output copied.");
-    } catch (error) {
-      setStatusTone(elements.assistantStatus, "error");
-      setText(elements.assistantStatus, "Clipboard access was blocked. Select the output and copy it manually.");
-    }
-  });
-}
-elements.clearOutputBtn.addEventListener("click", () => {
-  setStatusTone(elements.assistantStatus, "neutral");
-  setText(elements.assistantStatus, "Output cleared.");
-  renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
-  setText(elements.nextStep, "");
-  elements.nextStep.classList.add("hidden");
-  setAnswerOpen(false);
+
+$("problem-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void loadProblem($("identifier").value.trim());
+});
+$("daily-button").addEventListener("click", () => loadProblem(null));
+$("hint-button").addEventListener("click", () => ask("hint"));
+$("review-button").addEventListener("click", () => ask("review"));
+$("save-button").addEventListener("click", saveSolution);
+$("refresh-history").addEventListener("click", () => run("history-status", "Loading history...", refreshHistory));
+$("code").addEventListener("input", saveDraft);
+$("language").addEventListener("change", () => {
+  saveDraft();
+  language = $("language").value;
+  $("code").value = storage(draftKey()) ?? "";
+  storage("leetmentor.language", language);
+  $("feedback").hidden = true;
 });
 
-elements.problemIdentifier.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    loadProblem();
+const savedLanguage = storage("leetmentor.language");
+if (["Python", "C++", "Java", "JavaScript"].includes(savedLanguage)) language = savedLanguage;
+$("language").value = language;
+$("code").value = storage(draftKey()) ?? storage("leetmentor.code") ?? "";
+try {
+  const saved = JSON.parse(storage("leetmentor.problemSnapshot"));
+  if (saved && typeof saved.title === "string" && typeof saved.titleSlug === "string") {
+    showProblem(saved);
+    status("problem-status", "Restored your last problem.");
   }
-});
-
-elements.languageSelect.addEventListener("change", () => {
-  const nextLanguage = elements.languageSelect.value;
-  if (nextLanguage !== state.activeLanguage) {
-    saveDraftFor(state.problem, state.activeLanguage, elements.codeInput.value);
-    state.activeLanguage = nextLanguage;
-    restoreDraftFor(state.problem, state.activeLanguage);
-  }
-  updateEditorFilename();
-  saveWorkspace();
-});
-elements.hintLevelSelect.addEventListener("change", saveWorkspace);
-elements.problemIdentifier.addEventListener("input", saveWorkspace);
-elements.codeInput.addEventListener("input", () => queueAutosave("code"));
-if (elements.questionInput) {
-  elements.questionInput.addEventListener("input", () => queueAutosave("note"));
-}
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    state.lastHiddenAt = Date.now();
-    return;
-  }
-
-  const wasAway = state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS;
-  state.lastHiddenAt = 0;
-  if (wasAway) {
-    wakeServer();
-  }
-});
-window.addEventListener("focus", () => {
-  if (state.lastHiddenAt && Date.now() - state.lastHiddenAt >= SERVER_IDLE_THRESHOLD_MS) {
-    wakeServer();
-  }
-});
-window.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && isAnswerOpen()) {
-    setAnswerOpen(false);
-    return;
-  }
-
-  if (event.key === "Tab" && isAnswerOpen()) {
-    const focusable = Array.from(
-      elements.mentorResponsePanel.querySelectorAll("button:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])")
-    ).filter((element) => !element.hasAttribute("hidden"));
-    if (focusable.length) {
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (document.activeElement === elements.mentorResponsePanel) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    return;
-  }
-
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-    event.preventDefault();
-    runAssistant(state.activeMode);
-  }
-});
-
-setActiveMode("hint");
-const savedWorkspace = restoreWorkspace();
-if (savedWorkspace.problem) {
-  showProblem(savedWorkspace.problem, {
-    legacyDraft: savedWorkspace.legacyDraft,
-    restoreDraft: true
-  });
-  setStatusTone(elements.problemStatus, "neutral");
-  setText(elements.problemStatus, "Restored your last loaded problem.");
-}
-if (!state.problem) {
-  void loadStudyData(null);
-}
-updateEditorFilename();
-updateServerChip("Server ready", "success");
-setStatusTone(elements.problemStatus, "neutral");
-setStatusTone(elements.assistantStatus, "neutral");
-setAnswerOpen(false);
-renderAssistantOutput("Your explanation, hint, code review, or dry run will appear here.");
+} catch { /* A damaged old snapshot should not stop practice. */ }
+void run("history-status", "Loading history...", refreshHistory);
