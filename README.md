@@ -1,99 +1,168 @@
 # LeetMentor
 
-A small Django app that loads LeetCode problems, gives hints and code reviews,
-and saves solved problems with your best code.
-
-## What you can do
-
-1. Load today's daily problem, or search by number, title, slug, or URL.
-2. Write or paste code, then choose a starting, approach, or algorithm hint, or ask for a code review.
-3. Click **Save as best solution** to mark the problem solved.
-4. Open **Solved history** to see your saved code and revisit a problem.
-
-You choose which code is best. Saving again replaces that problem's saved code,
-including its language. Drafts are saved separately for each problem and language
-in your browser. Opening a problem restores its draft, or its saved solution when
-there is no draft.
-
-The app does not run code or submit it to LeetCode. Hints and reviews require a
-working Groq API key. The server uses GPT-OSS 120B by default and tries a supported
-model if the host still has a retired model configured. Rate limits, invalid keys,
-and provider failures show specific messages.
+A small React + Django app for LeetCode practice. Load a daily or chosen problem,
+write code, ask for one of three hint levels or a code review, and save your best solution.
 
 ## Run locally
 
-Use Python 3.12 or newer:
+Use Python 3.12+ and Node.js 22.12+ (Node 22 LTS or newer).
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+npm ci --prefix frontend
 ```
 
-If you already have a `.env`, keep it. Otherwise, edit the copied file and add your
-Groq API key. On macOS/Linux use `source .venv/bin/activate` and `cp .env.example .env`.
+If you do not already have `.env`, copy `.env.example` to `.env` and add your
+Groq API key. Keep `DJANGO_DEBUG=true` locally. Keep your existing `.env` if present.
+
+Build the frontend, then serve the entire app with Django:
 
 ```powershell
+npm run build --prefix frontend
 python manage.py migrate
 python manage.py runserver
 ```
 
-Open http://127.0.0.1:8000/. No Node.js or frontend build is needed.
+Open http://localhost:8000/. Rebuild the frontend after changing JSX or CSS.
+Node is not needed once the production assets have been built.
 
-## How to explain the project
-
-> The browser sends requests to Django. Django fetches problems from LeetCode,
-> sends the problem and my code to Groq for hints or reviews, and stores my chosen
-> best solutions in a database. The page uses plain HTML, CSS, and JavaScript.
-
-Read these six files to understand the app:
-
-| File | Job |
-| --- | --- |
-| `mentor/views.py` | Handle requests for problems, AI help, and history |
-| `mentor/leetcode.py` | Fetch LeetCode data and turn descriptions into readable text |
-| `mentor/services.py` | Validate input and ask Groq for a hint or code review |
-| `mentor/models.py` | Store one best solution per problem and browser session |
-| `static/mentor/app.js` | Connect buttons, display responses, and keep local drafts |
-| `templates/mentor/dashboard.html` | The single practice page |
-
-`static/mentor/dashboard.css` styles the page. `mentor/urls.py` maps URLs to views.
-`leetcode_mentor_project/` contains Django configuration; `mentor/migrations/`
-contains database changes; `mentor/tests.py` checks the main behavior.
-
-A hint follows one path: **Get a hint → app.js → views.py → services.py → Groq → page**.
-
-## Storage
-
-Saved solutions use SQLite locally, or PostgreSQL when `DATABASE_URL` is set.
-History belongs to an anonymous browser session, not a LeetCode account. Clearing
-cookies or losing the session removes access to that history. Clearing browser
-storage removes drafts. There is no login or automatic LeetCode sync.
-
-The simplification migration copies old solved/optimized/mastered records into
-history. They have no saved code until you add one, because the old tracker only
-stored study notes. The original `mentor_studyrecord` table remains in the database
-as an archive, including reflections and review dates. Old browser draft keys are
-still supported. Keep both migration files.
-
-## Checks and deployment
+For automatic frontend updates, keep Django running on **localhost:8000** in one
+terminal and run this in another:
 
 ```powershell
+npm run dev --prefix frontend
+```
+
+Open http://localhost:5173/. Vite proxies API requests and the logo to Django.
+It also proxies `/django-csrf` to Django's existing home page to obtain its CSRF
+cookie and token. This path exists only in the Vite development proxy; no backend
+endpoint or CORS configuration was added. Use `localhost` for both servers.
+
+Alternatively, `npm run build:watch --prefix frontend` rebuilds assets while you
+continue using Django at http://localhost:8000/.
+
+## Small frontend structure
+
+```text
+frontend/
+  package.json          # React/Vite dependencies and commands
+  package-lock.json     # Exact dependency versions for reproducible builds
+  vite.config.js        # Development proxy and Django static output directory
+  index.html            # Vite development entry page
+  src/
+    main.jsx            # Mount App into the page and import the stylesheet
+    App.jsx             # Page layout, state, and button handlers
+    api.js              # Fetch JSON with session cookies, CSRF, and a timeout
+    Feedback.jsx         # Safely display AI headings, code blocks, and tables
+    style.css            # The existing design and responsive layout
+```
+
+`templates/mentor/dashboard.html` is the production HTML shell: it supplies the
+CSRF token, fonts, logo, root element, and built script/style tags. There is one
+frontend implementation. The old vanilla `app.js` and `dashboard.css` were removed;
+their styling now lives in `frontend/src/style.css`.
+
+No router, global-state library, UI framework, custom hooks, or TypeScript is used.
+`Feedback.jsx` is the only extracted feature component because safe answer
+formatting would otherwise distract from the page's request flow. The small
+`Status` and `InlineText` helpers remain in the files that use them.
+
+## How to explain it in an interview
+
+> React stores the current problem and code in component state. Button handlers
+> send JSON to Django using fetch. Django retrieves problems from LeetCode, asks
+> Groq for hints or reviews, and saves my chosen best solutions in the database.
+> Vite builds React into static files that Django serves in production.
+
+Read `main.jsx`, then `App.jsx`, then `api.js`. Trace **Get a hint → ask → request →
+Django assistant_chat → Groq → setFeedback → React renders the answer**.
+
+The important React concepts are:
+
+- **Components and JSX:** functions describe the page, with props for the feedback renderer.
+- **useState:** holds the problem, code, language, hint level, history, feedback,
+  loading flag, and messages inside `App`. One page does not need global state.
+- **Controlled inputs:** `value` reads state and `onChange` updates it.
+- **useEffect:** loads history when the page opens and saves drafts/preferences
+  when their state changes. Button requests stay in event handlers.
+- **Rendering lists and conditions:** `map` displays examples/history; conditions
+  select the empty state, loaded problem, or AI feedback.
+- **Async handlers:** await a request, display an error if it fails, and clear the
+  loading flag in `finally`. Controls are disabled while a request runs so
+  switching problems cannot show a stale response.
+- **Safe rendering:** React escapes problem text, code, and AI output. The feedback
+  component creates normal React elements; it never inserts raw HTML.
+
+## Django and the API
+
+Backend responsibilities and request formats are unchanged:
+
+| Route | Method | Purpose |
+| --- | --- | --- |
+| `/api/problem/?identifier=...` | GET | Number, title, slug, or LeetCode URL lookup |
+| `/api/daily/` | GET | Daily LeetCode challenge |
+| `/api/history/` | GET | Browser session's saved solutions |
+| `/api/history/` | POST | Save or replace one best solution |
+| `/api/assistant/` | POST | Hint (`hintLevel` 1–3) or code review |
+
+`api.js` uses relative URLs and `credentials: "same-origin"`. Browser cookies keep
+the existing anonymous Django session. POST requests carry `X-CSRFToken`, obtained
+from the Django HTML shell (or from the proxied Django page during Vite development).
+Groq keys stay in Django's environment; React never receives them.
+
+The backend still validates requests, enforces its in-process rate limit, and
+stores history. Read `mentor/urls.py`, then `mentor/views.py`, then
+`mentor/leetcode.py`, `mentor/services.py`, or `mentor/models.py` for each request.
+
+## Drafts and history
+
+Drafts use the same `leetmentor.draft.v2.<problem>.<language>` keys as before.
+The last problem snapshot, language, hint preference, and legacy code key are
+also preserved. A damaged snapshot is ignored; unavailable localStorage shows
+an explanatory message while practice remains usable.
+
+Saving marks a problem solved and replaces its previous best code and language.
+You choose which code is best. History can reopen a problem and uses its saved
+solution if no draft exists. The app does not run or submit code to LeetCode.
+
+History belongs to an anonymous browser session. Clearing cookies can remove
+access to it; clearing localStorage removes drafts. Saved solutions use SQLite
+locally or PostgreSQL through `DATABASE_URL`. Old study notes remain in the
+archived database table; keep both migrations.
+
+## Checks
+
+```powershell
+npm ci --prefix frontend
+npm run build --prefix frontend
 python manage.py test
 python manage.py check
 python manage.py makemigrations --check --dry-run
 python manage.py collectstatic --noinput
 ```
 
-Tests use a separate database and mock external APIs. POST routes require CSRF.
-The assistant is limited to 20 requests per five minutes per session/IP by default
-(`ASSISTANT_RATE_LIMIT`); the limiter is local to each server process.
+Build before running Django's frontend asset checks. Tests use a separate
+database and mock external APIs. Browser QA should also exercise search/daily,
+all hint levels, review, save/replace/reload history, per-language drafts, CSRF,
+errors, and disabled controls while a request is pending.
 
-`render.yaml` and `build.sh` support Render. `Dockerfile`, `start.py`, and `Procfile`
-are deployment entry points. Production needs `DJANGO_SECRET_KEY`,
-`DJANGO_DEBUG=false`, `DJANGO_ALLOWED_HOSTS`, and `GROQ_API_KEY`. `AI_MODEL` can
-override the configured Groq model. On Railway, set this in the service Variables
-tab: changing `.env` locally or `render.yaml` does not update Railway variables. Use persistent SQLite storage or PostgreSQL
-to retain history. The health route checks that the app responds; it does not
-check external providers or the database.
+## Production deployment
+
+Railway continues to run a single Django service. The Dockerfile first builds the
+frontend in a Node 22 stage. Only the generated files are copied into the Python
+runtime stage, then Django `collectstatic` collects and hashes them for WhiteNoise.
+The production container runs migrations and Gunicorn using the existing `start.py`.
+It does not need a Vite server or a Node runtime.
+
+Vite writes generated assets into ignored `static/mentor/react/`. Stable build
+filenames let the Django template use its normal `{% static %}` tags; Django's
+manifest storage adds cache hashes in production. Do not edit or commit generated
+bundles or `node_modules`. `build.sh` builds React before collecting static files
+for deployments that use the shell build path; that environment needs Node 22+.
+
+Production requires `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=false`, allowed hosts, and
+`GROQ_API_KEY`. `AI_MODEL` overrides the default model and is configured separately
+in Railway Variables. Use PostgreSQL or persistent SQLite storage for history.
+The readiness endpoint does not check external-provider or database availability.

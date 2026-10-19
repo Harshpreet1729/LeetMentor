@@ -10,78 +10,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20261019-hints">
-  <script defer src="{% static 'mentor/app.js' %}?v=20261019-hints"></script>
+  <link rel="stylesheet" href="{% static 'mentor/react/app.css' %}">
+  <script type="module" src="{% static 'mentor/react/app.js' %}"></script>
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="/"><img src="{% static 'brand/leetmentor-mark.svg' %}" alt="">LeetMentor</a>
-    <nav aria-label="Main navigation"><a class="active" href="#workspace">Practice</a><a href="#history">Solved history</a></nav>
-  </header>
-  <main>
-    <section class="hero" aria-labelledby="page-title">
-      <div class="hero-copy"><h1 id="page-title">One problem at a time.</h1><p>A little guidance. A better solution.</p></div>
-      <div class="loader">
-        <label for="identifier">Find your next problem</label>
-        <form id="problem-form">
-          <input id="identifier" placeholder="Number, title, or LeetCode URL" required autocomplete="off">
-          <button type="submit" id="load-button">Load problem</button>
-          <button type="button" id="daily-button" class="secondary">Today's daily</button>
-        </form>
-        <p id="problem-status" class="status" role="status">Choose a problem to get started.</p>
-      </div>
-    </section>
-
-    <div id="workspace" class="workspace">
-      <section class="panel problem-panel" aria-labelledby="problem-title">
-        <div class="panel-top"><span class="section-label">Problem</span><a id="leetcode-link" target="_blank" rel="noopener noreferrer" hidden>Open on LeetCode &#8599;</a></div>
-        <div class="problem-heading"><h2 id="problem-title">Your next problem</h2><span id="problem-meta" class="difficulty" hidden></span></div>
-        <div id="problem-content" class="problem-text empty">Load today's daily challenge or search for a problem above. Your statement, examples, and constraints will appear here.</div>
-      </section>
-
-      <section class="panel solution-panel" aria-labelledby="code-title">
-        <div class="panel-top"><h2 id="code-title" class="section-label">Your solution</h2>
-          <label class="sr-only" for="language">Programming language</label>
-          <select id="language"><option>Python</option><option>C++</option><option>Java</option><option>JavaScript</option></select>
-        </div>
-        <div class="editor">
-          <div class="editor-body"><pre id="line-numbers" aria-hidden="true">1</pre>
-            <label class="sr-only" for="code">Your code</label>
-            <textarea id="code" wrap="off" spellcheck="false" maxlength="60000" placeholder="# Write or paste your solution here" aria-describedby="draft-status"></textarea>
-          </div>
-          <div class="editor-footer"><span id="draft-status">Drafts are saved in this browser</span><span id="line-count">1 line</span></div>
-        </div>
-        <div class="hint-options">
-          <label for="hint-level">Hint level</label>
-          <select id="hint-level" aria-describedby="hint-description">
-            <option value="1">1 · Starting hint</option>
-            <option value="2">2 · Approach hint</option>
-            <option value="3">3 · Algorithm hint</option>
-          </select>
-          <span id="hint-description">A small nudge to get started.</span>
-        </div>
-        <div class="actions">
-          <button id="hint-button" class="secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 .8-1 2-1 3H9c0-1 0-2.2-1-3Z"/></svg> Get a hint</button>
-          <button id="review-button" class="secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7-5 5 5 5m10-10 5 5-5 5m-3-13-4 16"/></svg> Review code</button>
-          <button id="save-button">Save best solution</button>
-        </div>
-        <p class="save-note">Save marks it solved and replaces its best code. Code is not executed here.</p>
-        <p id="action-status" class="status" role="status"></p>
-        <section id="feedback" class="feedback" aria-labelledby="feedback-title">
-          <h3 id="feedback-title" class="section-label">Mentor feedback</h3>
-          <div id="answer" class="answer muted">Stuck on the next step? Ask for a hint, or get a second look at your code.</div>
-        </section>
-      </section>
-    </div>
-
-    <section id="history" class="panel history" aria-labelledby="history-title">
-      <div class="panel-top"><h2 id="history-title" class="section-label">Solved history</h2><button id="refresh-history" class="secondary compact">Refresh</button></div>
-      <p class="history-note">Your problems. Your best solutions. Saved for this browser session.</p>
-      <p id="history-status" class="status" role="status"></p>
-      <div class="history-columns" aria-hidden="true"><span>Problem</span><span>Difficulty</span><span>Language</span><span>Saved</span></div>
-      <div id="history-list"></div>
-    </section>
-  </main>
-  <footer>A little progress, one problem at a time.</footer>
+  <div id="root"></div>
+  <noscript>Enable JavaScript to load LeetMentor's practice page.</noscript>
 </body>
 </html>

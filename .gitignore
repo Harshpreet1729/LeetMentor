@@ -14,3 +14,5 @@ django.err
 .DS_Store
 output/
 tmp/
+frontend/node_modules/
+static/mentor/react/

@@ -13,6 +13,7 @@
   line-height: 1.65;
 }
 * { box-sizing: border-box; }
+.page-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
 html { scroll-behavior: smooth; scroll-padding-top: 24px; }
 body { margin: 0; background: radial-gradient(ellipse at 30% 0%, #10334466, transparent 55%); }
 a { color: #81d3ff; text-decoration: none; }

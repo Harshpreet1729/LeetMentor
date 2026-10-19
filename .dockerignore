@@ -13,3 +13,5 @@ __pycache__
 staticfiles
 tmp
 output
+frontend/node_modules
+static/mentor/react

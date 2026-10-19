@@ -168,10 +168,13 @@ class EndpointTests(TestCase):
         return (client or self.client).post(url, json.dumps(data), content_type="application/json")
 
     def test_home_and_assets(self):
-        self.assertContains(self.client.get("/"), "One problem at a time")
-        self.assertContains(self.client.get("/"), "Solved history")
-        for path in ("mentor/app.js", "mentor/dashboard.css", "brand/leetmentor-mark.svg"):
+        response = self.client.get("/")
+        self.assertContains(response, '<div id="root"></div>')
+        self.assertContains(response, 'name="csrf-token"')
+        self.assertContains(response, 'type="module"')
+        for path in ("mentor/react/app.js", "mentor/react/app.css", "brand/leetmentor-mark.svg"):
             self.assertIsNotNone(finders.find(path))
+            self.assertContains(response, path)
         self.assertEqual(self.client.get("/api/health/").status_code, 200)
         self.assertEqual(self.client.get("/api/study/").status_code, 404)
 
