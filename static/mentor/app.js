@@ -35,6 +35,48 @@ function resetFeedback() {
   $("answer").classList.add("muted");
 }
 
+// Build elements instead of inserting provider HTML, so answers cannot run scripts.
+function renderAnswer(answer) {
+  $("answer").replaceChildren();
+  const inline = (parent, text) => {
+    for (const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+      const tag = part.startsWith("**") ? "strong" : part.startsWith("`") ? "code" : "span";
+      const element = document.createElement(tag);
+      element.textContent = tag === "strong" ? part.slice(2, -2) : tag === "code" ? part.slice(1, -1) : part;
+      parent.append(element);
+    }
+  };
+  answer.split("```").forEach((section, index) => {
+    if (index % 2) {
+      const code = document.createElement("pre");
+      code.textContent = section.replace(/^[a-zA-Z0-9+#-]*\n/, "").trimEnd();
+      $("answer").append(code);
+      return;
+    }
+    for (const block of section.trim().split(/\n\s*\n/)) {
+      if (!block) continue;
+      const lines = block.split("\n");
+      if (lines.length > 1 && lines.every(line => line.trim().startsWith("|"))) {
+        const table = document.createElement("table");
+        lines.filter(line => !/^\s*\|[\s:|−-]+\|\s*$/.test(line)).forEach((line, rowIndex) => {
+          const row = document.createElement("tr");
+          line.trim().replace(/^\||\|$/g, "").split("|").forEach(value => {
+            const cell = document.createElement(rowIndex ? "td" : "th");
+            inline(cell, value.trim());
+            row.append(cell);
+          });
+          table.append(row);
+        });
+        $("answer").append(table);
+      } else {
+        const paragraph = document.createElement(/^#{1,6} /.test(block) ? "h4" : "p");
+        inline(paragraph, block.replace(/^#{1,6} /, ""));
+        $("answer").append(paragraph);
+      }
+    }
+  });
+}
+
 function saveDraft() {
   storage(draftKey(), $("code").value);
 }
@@ -129,7 +171,7 @@ function ask(mode) {
     $("feedback").hidden = true;
     const data = await request("/api/assistant/", {mode, problem, language, userCode: $("code").value});
     $("feedback-title").textContent = mode === "hint" ? "Hint" : "Code review";
-    $("answer").textContent = data.answer;
+    renderAnswer(data.answer);
     $("answer").classList.remove("muted");
     $("feedback").hidden = false;
     status("action-status", "");

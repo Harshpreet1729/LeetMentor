@@ -13,7 +13,7 @@ INSTRUCTIONS = {
     "hint": "Give one short, problem-specific hint. Do not reveal the solution or code.",
     "review": (
         "Review the submitted code for correctness, edge cases, and time/space complexity. "
-        "Explain the most useful fix or improvement. Never claim you ran the code."
+        "Explain the most useful fix or improvement in under 200 words. Do not rewrite correct code. Never claim you ran the code."
     ),
 }
 

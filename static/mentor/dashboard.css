@@ -45,7 +45,7 @@ button.secondary { background: #0b1b28; border-color: #477184; color: var(--text
 button.secondary:hover { background: #173342; border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: wait; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.workspace { display: grid; grid-template-columns: .84fr 1.16fr; gap: 20px; align-items: stretch; }
+.workspace { display: grid; grid-template-columns: .84fr 1.16fr; gap: 20px; align-items: start; }
 .panel { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: linear-gradient(140deg, #10263355, transparent 65%), var(--panel); }
 .panel-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; min-height: 28px; }
 .panel-top a { font-size: 11px; }
@@ -110,7 +110,7 @@ footer { text-align: center; color: #8198ab; font-size: 11px; padding: 30px; }
   .hero, .workspace { grid-template-columns: 1fr; }
   .hero { padding: 22px 18px 18px; }
   h1 { font-size: 35px; }
-    .hero-copy p { font-size: 13px; margin-top: 10px; }
+  .hero-copy p { font-size: 13px; margin-top: 10px; }
   .loader { padding: 14px; }
   .actions button { flex: 1; }
   #save-button { flex-basis: 100%; }
@@ -123,3 +123,12 @@ footer { text-align: center; color: #8198ab; font-size: 11px; padding: 30px; }
   html { scroll-behavior: auto; }
   button { transition: none; }
 }
+
+/* Long feedback stays readable without stretching both workspace panels. */
+.answer { max-height: 420px; overflow: auto; }
+.answer p, .answer h4, .answer pre, .answer table { margin: 0 0 14px; }
+.answer > :last-child { margin-bottom: 0; }
+.answer pre { padding: 12px; background: #06131e; border: 1px solid var(--border); border-radius: 7px; overflow: auto; font: 12px/1.7 Consolas, monospace; }
+.answer code { color: #9ce9df; font-family: Consolas, monospace; }
+.answer table { width: 100%; border-collapse: collapse; white-space: normal; }
+.answer th, .answer td { padding: 8px; border: 1px solid var(--border); text-align: left; }
