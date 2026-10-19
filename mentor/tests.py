@@ -10,7 +10,7 @@ from django.test import Client, SimpleTestCase, TestCase, TransactionTestCase
 from . import views
 from .leetcode import LeetCodeService
 from .models import SavedSolution
-from .services import AIService
+from .services import AIService, ProviderError
 
 
 PROBLEM = {
@@ -55,7 +55,7 @@ class AssistantTests(SimpleTestCase):
     @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
     @patch("mentor.services.requests.post")
     def test_hint_and_review_send_problem_and_code(self, post):
-        post.return_value = Mock(json=lambda: {"choices": [{"message": {"content": "Useful feedback"}}]})
+        post.return_value = Mock(status_code=200, json=lambda: {"choices": [{"message": {"content": "Useful feedback"}}]})
         for mode in ("hint", "review"):
             self.payload["mode"] = mode
             self.assertEqual(self.service.get_answer(self.payload)["answer"], "Useful feedback")
@@ -85,15 +85,58 @@ class AssistantTests(SimpleTestCase):
     @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
     @patch("mentor.services.requests.post")
     def test_provider_failures_have_safe_error(self, post):
-        for error in (requests.Timeout("private provider details"), ValueError("bad JSON")):
+        for error in (requests.Timeout("private provider details"),):
             post.side_effect = error
             with self.assertRaisesMessage(ValueError, "Groq is unavailable"):
                 self.service.get_answer(self.payload)
         post.side_effect = None
         for data in ({}, {"choices": []}, {"choices": [{"message": {"content": None}}]}):
-            post.return_value = Mock(json=lambda: data)
+            post.return_value = Mock(status_code=200, json=lambda: data)
             with self.assertRaisesMessage(ValueError, "Groq is unavailable"):
                 self.service.get_answer(self.payload)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key", "AI_MODEL": "llama-3.3-70b-versatile"})
+    @patch("mentor.services.requests.post")
+    def test_retired_host_model_falls_back_to_current_model(self, post):
+        post.side_effect = [
+            Mock(status_code=404, json=lambda: {"error": {"code": "model_not_found"}}),
+            Mock(status_code=200, json=lambda: {"choices": [{"message": {"content": "Working hint"}}]}),
+        ]
+        self.assertEqual(self.service.get_answer(self.payload)["answer"], "Working hint")
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["model"], "llama-3.3-70b-versatile")
+        self.assertEqual(post.call_args_list[1].kwargs["json"]["model"], "openai/gpt-oss-120b")
+        self.assertEqual(post.call_args.kwargs["json"]["reasoning_effort"], "low")
+        self.assertGreaterEqual(post.call_args.kwargs["json"]["max_completion_tokens"], 1800)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key", "AI_MODEL": "openai/gpt-oss-120b"})
+    @patch("mentor.services.requests.post")
+    def test_provider_errors_are_actionable_and_not_retried(self, post):
+        for status, message in [(401, "API key"), (403, "denied"), (413, "too long"), (429, "usage limit")]:
+            post.reset_mock()
+            post.return_value = Mock(status_code=status, json=lambda: {"error": {"code": "failure", "message": "private details"}})
+            with self.subTest(status=status), self.assertRaises(ProviderError) as caught:
+                self.service.get_answer(self.payload)
+            self.assertIn(message, str(caught.exception))
+            self.assertNotIn("private details", str(caught.exception))
+            self.assertEqual(caught.exception.status, 429 if status == 429 else 502)
+            self.assertEqual(post.call_count, 1)
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key", "AI_MODEL": "openai/gpt-oss-120b"})
+    @patch("mentor.services.requests.post")
+    def test_fallback_is_bounded_when_models_are_unavailable(self, post):
+        post.return_value = Mock(status_code=404, json=lambda: {"error": {"code": "model_not_found"}})
+        with self.assertRaisesMessage(ProviderError, "configured AI model"):
+            self.service.get_answer(self.payload)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "openai/gpt-oss-20b")
+
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
+    @patch("mentor.services.requests.post")
+    def test_invalid_provider_json_is_safe(self, post):
+        post.return_value = Mock(status_code=200)
+        post.return_value.json.side_effect = ValueError("private details")
+        with self.assertRaisesMessage(ProviderError, "invalid response"):
+            self.service.get_answer(self.payload)
 
 
 class EndpointTests(TestCase):
@@ -185,8 +228,15 @@ class EndpointTests(TestCase):
     def test_assistant_response_and_provider_failure(self, answer):
         answer.return_value = {"answer": "Try a hash map."}
         self.assertEqual(self.post("/api/assistant/", {"mode": "hint"}).json()["answer"], "Try a hash map.")
-        answer.side_effect = ValueError("Groq is unavailable")
+        answer.side_effect = ProviderError("Groq is unavailable")
         self.assertEqual(self.post("/api/assistant/", {"mode": "hint"}).status_code, 502)
+
+    @patch("mentor.views.ai_service.get_answer")
+    def test_provider_status_and_message_reach_the_browser(self, answer):
+        answer.side_effect = ProviderError("The mentor has reached Groq's usage limit. Wait a little before trying again.", 429)
+        response = self.post("/api/assistant/", {"mode": "hint"})
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("usage limit", response.json()["message"])
 
     @patch("mentor.views.ASSISTANT_RATE_LIMIT", 1)
     @patch("mentor.views.ai_service.get_answer", return_value={"answer": "Hint"})

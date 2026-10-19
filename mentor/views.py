@@ -15,7 +15,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from .models import SavedSolution
 from .leetcode import leetcode_service
-from .services import LANGUAGES, ai_service
+from .services import LANGUAGES, ProviderError, ai_service
 
 
 logger = logging.getLogger(__name__)
@@ -192,16 +192,10 @@ def assistant_chat(request: HttpRequest) -> JsonResponse:
     try:
         response = ai_service.get_answer(payload)
         return JsonResponse({"ok": True, **response})
+    except ProviderError as error:
+        return JsonResponse({"ok": False, "message": str(error)}, status=error.status)
     except ValueError as error:
-        message = str(error)
-        status = 400
-        normalized = message.lower()
-        if "missing groq_api_key" in normalized or "could not reach" in normalized:
-            status = 503
-        elif "groq" in normalized:
-            status = 502
-            message = "The mentor provider is temporarily unavailable. Please try again."
-        return JsonResponse({"ok": False, "message": message}, status=status)
+        return JsonResponse({"ok": False, "message": str(error)}, status=400)
     except Exception:
         logger.exception("Unexpected mentor response failure")
         return JsonResponse({"ok": False, "message": "Unable to generate a mentor response."}, status=500)

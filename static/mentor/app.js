@@ -22,6 +22,19 @@ function draftKey() {
   return `leetmentor.draft.v2.${encodeURIComponent(problem?.titleSlug || "scratchpad")}.${encodeURIComponent(language)}`;
 }
 
+function updateEditor() {
+  const count = $("code").value.split("\n").length;
+  $("line-numbers").textContent = Array.from({length: count}, (_, i) => i + 1).join("\n");
+  $("line-count").textContent = `${count} line${count === 1 ? "" : "s"}`;
+}
+
+function resetFeedback() {
+  $("feedback").hidden = false;
+  $("feedback-title").textContent = "Mentor feedback";
+  $("answer").textContent = "Stuck on the next step? Ask for a hint, or get a second look at your code.";
+  $("answer").classList.add("muted");
+}
+
 function saveDraft() {
   storage(draftKey(), $("code").value);
 }
@@ -67,20 +80,35 @@ function showProblem(next, saved = null) {
   }
   problem = next;
   $("problem-title").textContent = problem.title;
-  $("problem-meta").textContent = `#${problem.questionFrontendId} · ${problem.difficulty}`;
+  $("problem-meta").textContent = problem.difficulty;
+  $("problem-meta").dataset.level = problem.difficulty;
+  $("problem-meta").hidden = false;
+  $("problem-content").classList.remove("empty");
   $("leetcode-link").href = `https://leetcode.com/problems/${encodeURIComponent(problem.titleSlug)}/`;
   $("leetcode-link").hidden = false;
   $("problem-content").textContent = problem.statement || "Read the full statement on LeetCode.";
-  for (const [heading, values] of [["Examples", problem.examples], ["Constraints", problem.constraints]]) {
-    if (!values?.length) continue;
+  for (const [index, example] of (problem.examples || []).entries()) {
     const title = document.createElement("h3");
-    title.textContent = heading;
-    const text = document.createElement("div");
-    text.textContent = values.join("\n\n");
+    title.textContent = `Example ${index + 1}`;
+    const text = document.createElement("pre");
+    text.className = "example";
+    text.textContent = example.replace(/^Example\s+\d+[:\s]*/, "");
     $("problem-content").append(title, text);
   }
+  if (problem.constraints?.length) {
+    const heading = document.createElement("h3");
+    heading.textContent = "Constraints";
+    const list = document.createElement("ul");
+    for (const constraint of problem.constraints) {
+      const item = document.createElement("li");
+      item.textContent = constraint;
+      list.append(item);
+    }
+    $("problem-content").append(heading, list);
+  }
   $("code").value = storage(draftKey()) ?? saved?.bestCode ?? "";
-  $("feedback").hidden = true;
+  updateEditor();
+  resetFeedback();
   status("action-status", "");
   storage("leetmentor.problemSnapshot", JSON.stringify(problem));
 }
@@ -102,6 +130,7 @@ function ask(mode) {
     const data = await request("/api/assistant/", {mode, problem, language, userCode: $("code").value});
     $("feedback-title").textContent = mode === "hint" ? "Hint" : "Code review";
     $("answer").textContent = data.answer;
+    $("answer").classList.remove("muted");
     $("feedback").hidden = false;
     status("action-status", "");
   });
@@ -114,10 +143,14 @@ async function refreshHistory() {
   for (const saved of data.solutions) {
     const details = document.createElement("details");
     const summary = document.createElement("summary");
-    summary.textContent = saved.problemTitle;
-    const meta = document.createElement("span");
-    meta.textContent = `${saved.difficulty} · ${saved.language || "No saved code yet"} · ${new Date(saved.updatedAt).toLocaleDateString()}`;
-    summary.append(meta);
+    const title = document.createElement("strong");
+    title.textContent = saved.problemTitle;
+    summary.append(title);
+    for (const value of [saved.difficulty, saved.language || "No code yet", new Date(saved.updatedAt).toLocaleDateString()]) {
+      const cell = document.createElement("span");
+      cell.textContent = value;
+      summary.append(cell);
+    }
     const code = document.createElement("pre");
     code.textContent = saved.bestCode || "Completed in the old tracker. Save a solution to add your best code.";
     const open = document.createElement("button");
@@ -157,13 +190,15 @@ $("hint-button").addEventListener("click", () => ask("hint"));
 $("review-button").addEventListener("click", () => ask("review"));
 $("save-button").addEventListener("click", saveSolution);
 $("refresh-history").addEventListener("click", () => run("history-status", "Loading history...", refreshHistory));
-$("code").addEventListener("input", saveDraft);
+$("code").addEventListener("input", () => { saveDraft(); updateEditor(); });
+$("code").addEventListener("scroll", () => { $("line-numbers").scrollTop = $("code").scrollTop; });
 $("language").addEventListener("change", () => {
   saveDraft();
   language = $("language").value;
   $("code").value = storage(draftKey()) ?? "";
   storage("leetmentor.language", language);
-  $("feedback").hidden = true;
+  updateEditor();
+  resetFeedback();
 });
 
 const savedLanguage = storage("leetmentor.language");
@@ -177,4 +212,5 @@ try {
     status("problem-status", "Restored your last problem.");
   }
 } catch { /* A damaged old snapshot should not stop practice. */ }
+updateEditor();
 void run("history-status", "Loading history...", refreshHistory);

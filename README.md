@@ -16,7 +16,9 @@ in your browser. Opening a problem restores its draft, or its saved solution whe
 there is no draft.
 
 The app does not run code or submit it to LeetCode. Hints and reviews require a
-working Groq API key; provider failures show an error so you can retry.
+working Groq API key. The server uses GPT-OSS 120B by default and tries a supported
+model if the host still has a retired model configured. Rate limits, invalid keys,
+and provider failures show specific messages.
 
 ## Run locally
 
@@ -91,6 +93,7 @@ The assistant is limited to 20 requests per five minutes per session/IP by defau
 `render.yaml` and `build.sh` support Render. `Dockerfile`, `start.py`, and `Procfile`
 are deployment entry points. Production needs `DJANGO_SECRET_KEY`,
 `DJANGO_DEBUG=false`, `DJANGO_ALLOWED_HOSTS`, and `GROQ_API_KEY`. `AI_MODEL` can
-override the configured Groq model. Use persistent SQLite storage or PostgreSQL
+override the configured Groq model. On Railway, set this in the service Variables
+tab: changing `.env` locally or `render.yaml` does not update Railway variables. Use persistent SQLite storage or PostgreSQL
 to retain history. The health route checks that the app responds; it does not
 check external providers or the database.
