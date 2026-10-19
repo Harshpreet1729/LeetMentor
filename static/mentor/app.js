@@ -169,8 +169,9 @@ function ask(mode) {
     if (!problem) throw new Error("Load a problem first.");
     if (mode === "review" && !$("code").value.trim()) throw new Error("Paste your code first.");
     $("feedback").hidden = true;
-    const data = await request("/api/assistant/", {mode, problem, language, userCode: $("code").value});
-    $("feedback-title").textContent = mode === "hint" ? "Hint" : "Code review";
+    const hintLevel = Number($("hint-level").value);
+    const data = await request("/api/assistant/", {mode, problem, language, hintLevel, userCode: $("code").value});
+    $("feedback-title").textContent = mode === "hint" ? $("hint-level").selectedOptions[0].textContent : "Code review";
     renderAnswer(data.answer);
     $("answer").classList.remove("muted");
     $("feedback").hidden = false;
@@ -222,6 +223,20 @@ function saveSolution() {
     catch { status("history-status", "Solution saved. Refresh to reload history.", true); }
   });
 }
+
+function updateHintLevel() {
+  const descriptions = {
+    "1": "A small nudge to get started.",
+    "2": "The technique and why it fits.",
+    "3": "The steps to solve it, without code.",
+  };
+  $("hint-description").textContent = descriptions[$("hint-level").value];
+  storage("leetmentor.hintLevel", $("hint-level").value);
+}
+const savedHintLevel = storage("leetmentor.hintLevel");
+if (["1", "2", "3"].includes(savedHintLevel)) $("hint-level").value = savedHintLevel;
+updateHintLevel();
+$("hint-level").addEventListener("change", updateHintLevel);
 
 $("problem-form").addEventListener("submit", (event) => {
   event.preventDefault();

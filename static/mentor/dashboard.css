@@ -132,3 +132,8 @@ footer { text-align: center; color: #8198ab; font-size: 11px; padding: 30px; }
 .answer code { color: #9ce9df; font-family: Consolas, monospace; }
 .answer table { width: 100%; border-collapse: collapse; white-space: normal; }
 .answer th, .answer td { padding: 8px; border: 1px solid var(--border); text-align: left; }
+
+.hint-options { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; font-size: 11px; }
+.hint-options label { color: var(--text); font-weight: 700; }
+.hint-options span { color: var(--muted); }
+@media (max-width: 760px) { .hint-options span { flex-basis: 100%; } }

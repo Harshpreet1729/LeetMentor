@@ -65,6 +65,23 @@ class AssistantTests(SimpleTestCase):
             self.assertEqual(context["code"], "return [0, 1]")
             self.assertIn("Do not reveal" if mode == "hint" else "Never claim", body["messages"][0]["content"])
 
+    @patch.dict("os.environ", {"GROQ_API_KEY": "test-key"})
+    @patch("mentor.services.requests.post")
+    def test_hint_levels_send_distinct_guidance_and_default_to_starting(self, post):
+        post.return_value = Mock(status_code=200, json=lambda: {"choices": [{"message": {"content": "Helpful hint"}}]})
+        for level, label in [(1, "Starting hint"), (2, "Approach hint"), (3, "Algorithm hint")]:
+            self.service.get_answer({**self.payload, "hintLevel": level})
+            self.assertIn(label, post.call_args.kwargs["json"]["messages"][0]["content"])
+        self.service.get_answer(self.payload)
+        self.assertIn("Starting hint", post.call_args.kwargs["json"]["messages"][0]["content"])
+
+    @patch("mentor.services.requests.post")
+    def test_invalid_hint_levels_are_rejected_before_provider_call(self, post):
+        for level in (0, 4, True, 1.0, "2", None, [], {}):
+            with self.subTest(level=level), self.assertRaisesMessage(ValueError, "Hint level"):
+                self.service.get_answer({**self.payload, "hintLevel": level})
+        post.assert_not_called()
+
     @patch("mentor.services.requests.post")
     def test_invalid_inputs_never_call_provider(self, post):
         for change in (

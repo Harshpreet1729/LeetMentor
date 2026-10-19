@@ -6,7 +6,7 @@ and saves solved problems with your best code.
 ## What you can do
 
 1. Load today's daily problem, or search by number, title, slug, or URL.
-2. Write or paste code, then ask for a hint or code review.
+2. Write or paste code, then choose a starting, approach, or algorithm hint, or ask for a code review.
 3. Click **Save as best solution** to mark the problem solved.
 4. Open **Solved history** to see your saved code and revisit a problem.
 

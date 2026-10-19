@@ -10,8 +10,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20261019-desk">
-  <script defer src="{% static 'mentor/app.js' %}?v=20261019-desk"></script>
+  <link rel="stylesheet" href="{% static 'mentor/dashboard.css' %}?v=20261019-hints">
+  <script defer src="{% static 'mentor/app.js' %}?v=20261019-hints"></script>
 </head>
 <body>
   <header class="site-header">
@@ -50,6 +50,15 @@
             <textarea id="code" wrap="off" spellcheck="false" maxlength="60000" placeholder="# Write or paste your solution here" aria-describedby="draft-status"></textarea>
           </div>
           <div class="editor-footer"><span id="draft-status">Drafts are saved in this browser</span><span id="line-count">1 line</span></div>
+        </div>
+        <div class="hint-options">
+          <label for="hint-level">Hint level</label>
+          <select id="hint-level" aria-describedby="hint-description">
+            <option value="1">1 · Starting hint</option>
+            <option value="2">2 · Approach hint</option>
+            <option value="3">3 · Algorithm hint</option>
+          </select>
+          <span id="hint-description">A small nudge to get started.</span>
         </div>
         <div class="actions">
           <button id="hint-button" class="secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0c-1 .8-1 2-1 3H9c0-1 0-2.2-1-3Z"/></svg> Get a hint</button>
