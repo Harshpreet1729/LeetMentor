@@ -21,6 +21,7 @@ export default defineConfig(({ command }) => ({
     emptyOutDir: true,
     // Django's static storage adds the production cache hashes.
     rollupOptions: {
+      input: "src/main.jsx",
       output: {
         entryFileNames: "app.js",
         assetFileNames: "app[extname]",

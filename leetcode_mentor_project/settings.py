@@ -100,7 +100,6 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "leetcode_mentor_project.wsgi.application"
-ASGI_APPLICATION = "leetcode_mentor_project.asgi.application"
 
 default_database = {
     "ENGINE": "django.db.backends.sqlite3",

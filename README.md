@@ -14,8 +14,13 @@ python -m pip install -r requirements.txt
 npm ci --prefix frontend
 ```
 
-If you do not already have `.env`, copy `.env.example` to `.env` and add your
-Groq API key. Keep `DJANGO_DEBUG=true` locally. Keep your existing `.env` if present.
+Keep your existing `.env`. For a new setup, create `.env` in the project root:
+
+```dotenv
+DJANGO_DEBUG=true
+DJANGO_SECRET_KEY=replace-with-your-own-development-secret
+GROQ_API_KEY=your-groq-api-key
+```
 
 Build the frontend, then serve the entire app with Django:
 
@@ -159,8 +164,8 @@ It does not need a Vite server or a Node runtime.
 Vite writes generated assets into ignored `static/mentor/react/`. Stable build
 filenames let the Django template use its normal `{% static %}` tags; Django's
 manifest storage adds cache hashes in production. Do not edit or commit generated
-bundles or `node_modules`. `build.sh` builds React before collecting static files
-for deployments that use the shell build path; that environment needs Node 22+.
+bundles or `node_modules`. Railway builds the project using the Dockerfile;
+the old alternative deployment files have been removed.
 
 Production requires `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=false`, allowed hosts, and
 `GROQ_API_KEY`. `AI_MODEL` overrides the default model and is configured separately
