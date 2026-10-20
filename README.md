@@ -164,8 +164,15 @@ It does not need a Vite server or a Node runtime.
 Vite writes generated assets into ignored `static/mentor/react/`. Stable build
 filenames let the Django template use its normal `{% static %}` tags; Django's
 manifest storage adds cache hashes in production. Do not edit or commit generated
-bundles or `node_modules`. Railway builds the project using the Dockerfile;
-the old alternative deployment files have been removed.
+bundles or `node_modules`.
+
+Render is also an active deployment target. Its native Python service runs
+`./build.sh`, which installs Python dependencies, builds React (including Vite's
+development dependencies), collects static files, and runs migrations. The root
+`.node-version` selects Node 22 for this build. The start command is Gunicorn with
+`leetcode_mentor_project.wsgi:application`, bound to `0.0.0.0:$PORT`.
+`render.yaml` documents this configuration. Keep both Render's build files and
+Railway's Dockerfile: both services use this repository.
 
 Production requires `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=false`, allowed hosts, and
 `GROQ_API_KEY`. `AI_MODEL` overrides the default model and is configured separately
